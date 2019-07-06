@@ -66,13 +66,13 @@ dist, prev = g.dijkstra(1)
 print(dist)
 
 # generate BA graph with 100 vertices
-g = g.create_graph('barabasi', 100)
+g = Graph(directed=False).create_graph('barabasi', 100)
 
 # check if all vertices are mutually connected
 print(g.is_connected())
 
 # compute the betweenness centrality of vertex 1
-print(g.beteweenness(1))
+print(g.betweenness(1))
 ```
 
 # INSTALLATION
