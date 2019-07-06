@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Tools for graph theory and network science with many generation models
+# Tools for graph theory and network science with many generation models.
 # Copyright (c) 2018-2019, Hiroyuki Ohsaki.
 # All rights reserved.
 #
