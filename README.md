@@ -1,4 +1,4 @@
-# grapht-tools Package
+# graph-tools Package
 
 graph_tools - tools for graph theory and network science with many generation models
 
@@ -13,7 +13,7 @@ and undirected graphs with multi-edges, vertex weights, edge weights, and
 graph attributes.  A number of graph/network generation models and graph
 algorithms are supported.
 
-Major features of **graph-tools* are:
+Major features of **graph-tools** are:
 
 - directed/undirected graph with multi-edges, vertex weights, edge weights,
   and graph attributes
@@ -32,7 +32,7 @@ Major features of **graph-tools* are:
   algebraic connectivity, effective_resistance, and spanning tree count)
 
 - a number of graph/network generation models (random graph, ER (Erdos Renyi),
-  BA (Barabasi Albart), randomized BA, ring, tree, binary tree, BA tree,
+  BA (Barabasi Albert), randomized BA, ring, tree, binary tree, BA tree,
   generalized BA, latent, lattice, Voronoi, DB (Degree Bounded), configuration
   model, random regular graph, Li-Miani graph)
 
@@ -41,7 +41,7 @@ Major features of **graph-tools* are:
 # HISTORY
 
 The development of **graph-tools** started in 2007, which was initially an
-extension to Graph module in CPAN (Comprehensive Perl Archvie Network) by
+extension to Graph module in CPAN (Comprehensive Perl Archive Network) by
 Jarkko Hietaniemi.  Our Perl module has been called **graphtools** for long
 time and Perl module names were Graph::Util and Graph::Enhanced.
 **graphtools** in Perl has been developed until 2018.  Python version of
