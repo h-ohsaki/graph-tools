@@ -17,7 +17,7 @@ setuptools.setup(
     url="https://github.com/h-ohsaki/graph-tools",
     packages=setuptools.find_packages(),
     install_requires=['numpy', 'perlcompat', 'pytess'],
-    scripts=[''],
+#    scripts=[''],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
