@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 #
-# Tools for graph theory and complex networks written in Python
-# Copyright (c) 2018, Hiroyuki Ohsaki.
+# Tools for graph theory and network science with many generation models
+# Copyright (c) 2018-2019, Hiroyuki Ohsaki.
 # All rights reserved.
 #
 # $Id: graphtools.py,v 1.33 2019/07/05 17:34:20 ohsaki Exp $
 #
 
-# This program is free software; you can redistribute it and/or modify
+# This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation, either version 3 of the License, or
+# any later version.
 
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -18,23 +18,21 @@
 # GNU General Public License for more details.
 
 # You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 # Contributors
 # Ryo Nakamura <r-nakamura[atmark]kwansei.ac.jp>
 # Yuichi Yasuda <yuichi[atmark]kwansei.ac.jp>
 
-from collections import defaultdict, deque, OrderedDict
-import itertools
+from collections import deque
 import functools
+import itertools
 import math
 import random
 import re
 import time
 
 from perlcompat import warn, die
-import tbdump
 import numpy
 import pytess
 
@@ -61,66 +59,25 @@ CREATE_TYPES = sorted(CREATE_SUBP.keys())
 
 IMPORT_SUBP = {
     'dot': 'import_dot',
-    'dimacs': 'import_dimacs',
-    'inet': 'import_inet',
-    'brite': 'import_brite',
-    'gw': 'import_gw',
-    'nsnode': 'import_nsnode',
-    'nsagent': 'import_nsagent',
-    'metis': 'import_metis',
-    'edge': 'import_edge',
-    'cell': 'import_cell',
 }
 IMPORT_FORMATS = sorted(IMPORT_SUBP.keys())
 
 EXPORT_SUBP = {
     'dot': 'export_dot',
-    'dimacs': 'export_dimacs',
-    'inet': 'export_inet',
-    'nsnode': 'export_nsnode',
-    'nsagent': 'export_nsagent',
-    'nsagent_edge': 'export_nsagent_edge',
-    'nsagent_udp': 'export_nsagent_udp',
-    'metis': 'export_metis',
-    'pdnsnode': 'export_pdnsnode',
-    'pdnsagent': 'export_pdnsagent',
-    'gdl': 'export_gdl',
-    'cell': 'export_cell',
 }
 EXPORT_FORMATS = sorted(EXPORT_SUBP.keys())
 
 MAX_RETRIES = 100
 
-METIS_EDGE_WEIGHT_MASK = 1
-METIS_VERTEX_WEIGHT_MASK = 2
-
-PDNS_NETMASK = '255.255.255.0'
-PDNS_AGENT_PORT = 1234
-
-def str2number(v):
-    # FIXME: shoud not check type
-    if type(v) != str:
-        return v
-    # remove preceeding/trailing spaces
-    v = v.strip()
-    if v.startswith('0x'):
-        return int(v, 16)
-    elif re.match(r'[\d+-]+$', v):
-        return int(v)
-    elif re.match(r'[\d.eE+-]+$', v):
-        return float(v)
-    else:
-        return v
-
 class Graph:
     def __init__(self, directed=True, multiedged=True):
-        self.G = {}  # graph
+        self.G = {}  # graph attributes
         self.V = {}  # vertices
-        self.EI = {}  # incoing edges
+        self.EI = {}  # incoming edges
         self.EO = {}  # outgoin edges
         self.T = {}  # shortest path cache (total distances from vertex)
         self.P = {}  # shortest path cache (preceeding vertices list)
-        self.Cb = {}  # betweenness centrality cache
+        self.Cb = {}  # betweenness centrality cache (per vertex)
         self._directed = directed
 
     def __repr__(self):
@@ -135,64 +92,83 @@ class Graph:
     def multiedged(self):
         return True
 
-    def set_graph_attribute(self, attr, val):
-        self.G[attr] = val
-
-    def get_graph_attribute(self, attr):
-        return self.G.get(attr, None)
-
-    def average_degree(self):
-        total, count = 0, 0
-        for v in self.vertices():
-            total += self.degree(v)
-            count += 1
-        return total / count
+    def expect_directed(self):
+        if not self.directed():
+            die('directed graph expected')
 
     def expect_undirected(self):
         if not self.undirected():
             die('undirected graph expected')
 
-    def expect_directed(self):
-        if not self.directed():
-            die('directed graph expected')
-
     def expect_multiedged(self):
         if not self.multiedged():
             die('multiedged graph expected')
 
+    # graph ----------------------------------------------------------------
+    def set_graph_attribute(self, attr, val):
+        """Define the graph attribute ATTR as value VAL."""
+        self.G[attr] = val
+
+    def get_graph_attribute(self, attr):
+        """Extract and return the graph attribute named ATTR.  Return None if
+        the attribute does not exist."""
+        return self.G.get(attr, None)
+
+    def average_degree(self):
+        """Return the average degree of all vertices in the graph."""
+        degrees = [self.degree(v) for v in self.vertices()]
+        if degrees:
+            return sum(degrees) / len(degrees)
+        else:
+            return 0
+
     # vertex ----------------------------------------------------------------
     def vertices(self):
+        """Return all vertices in the graph as a list."""
+        # FIXME: should implement as a generator
         return list(self.V.keys())
 
     def has_vertex(self, v):
+        """Check if vertex V exists in the graph."""
         if self.V.get(v, None) is None:
             return False
         else:
             return True
 
     def add_vertex(self, v):
+        """Attach vertex V to the graph if it does not exist."""
         if not self.has_vertex(v):
             self.V[v] = {}  # default vertex attribute
 
     def add_vertices(self, *vertices):
+        """Attach vertices VERTICES to the graph while avoiding duplicates."""
         for v in vertices:
             self.add_vertex(v)
 
     def predecessors(self, v, ignore=False):
+        """Return the list of predecessor vertices of vetex V.  This method
+        fails if the graph is undirected.  Error checking is bypassed if
+        IGNORE is true."""
         if not ignore:
             self.expect_directed()
+        # FIXME: should implement as a generator
         if not self.EI.get(v, None):
             return []
         return list(self.EI[v].keys())
 
     def successors(self, u, ignore=False):
+        """Return the list of successor vertices of vetex V.  This method
+        fails if the graph is undirected.  Error checking is bypassed if
+        IGNORE is true."""
         if not ignore:
             self.expect_directed()
+        # FIXME: should implement as a generator
         if not self.EO.get(u, None):
             return []
         return list(self.EO[u].keys())
 
     def neighbors(self, v):
+        """Return all neighbor nodes of vetex V."""
         found = set()
         for u in self.predecessors(v, ignore=True):
             found.add(u)
@@ -201,29 +177,39 @@ class Graph:
         return list(found)
 
     def set_vertex_attribute(self, v, attr, val):
+        """Define the vertex attribute of vetex V named ATTR as value VAL."""
         if not self.has_vertex(v):
-            self.add_vertex(v)
+            die('set_vertex_attribute: no vertex {}'.format(v))
         self.V[v][attr] = val
 
     def get_vertex_attribute(self, v, attr):
+        """Return the vertex attribute of vetex V named ATTR."""
         return self.V[v].get(attr, None)
 
     def set_vertex_attributes(self, v, adict):
+        """Set multiple vertex attributes of vertex V.  Attributes are passed
+        by dictionary ADICT."""
         for key, val in adict.items():
-            self.V[v][key] = val
+            self.set_vertex_attribute(v, key, val)
 
     def get_vertex_attributes(self, v):
+        """Return all vertex attributes of vertex V as dictionary."""
         return self.V.get(v, {})
 
     def set_vertex_weight(self, v, val):
+        """Set the weight of vertex V to VAL.  The vertex weight is stored in
+        vertex attributes with the name 'weight'."""
         return self.set_vertex_attribute(v, 'weight', val)
 
     def get_vertex_weight(self, v):
+        """Return the vertex weight of vertex V."""
         return self.get_vertex_attribute(v, 'weight')
 
     def delete_vertex(self, v):
+        """Delete vertex V from the graph.  All incoming/outgoing edges are
+        deleted."""
         if not self.has_vertex(v):
-            return None
+            return
         for u in self.neighbors(v):
             try:
                 del self.EO[u][v]
@@ -244,22 +230,27 @@ class Graph:
             pass
 
     def delete_vertices(self, alist):
+        """Delete all vertices ALST."""
         for v in alist:
             self.delete_vertex(v)
 
     def random_vertex(self):
+        """Randomly choose a vertex from all vertices."""
         return random.choice(self.vertices())
 
     # edge ----------------------------------------------------------------
     def edges(self):
+        """Return all edges in the graph as a list."""
         found = []
         for u in self.EO:
             for v in self.EO[u]:
-                for id in self.get_multiedge_ids(u, v):
+                for id_ in self.get_multiedge_ids(u, v):
                     found.append([u, v])
         return found
 
     def unique_edges(self):
+        """Return all unique edges in the graph as a list.  All multi-edges
+        are unified into a single edge."""
         found = []
         for u in self.EO:
             for v in self.EO[u]:
@@ -267,6 +258,7 @@ class Graph:
         return found
 
     def has_edge(self, u, v):
+        """Check if the graph has edge (u, v)."""
         if self.undirected() and u > v:
             u, v = v, u
         if not self.EO.get(u, None):
@@ -275,9 +267,11 @@ class Graph:
             return False
         return True
 
-    # return the continue edge ID, which is equivalent to the number of
-    # multi-edges between vertices
     def get_multiedge_ids(self, u, v):
+        """Return the edge identifiers (starting from zero) of edges between
+        vertex U and vertex V as a list.  For instance, two vertices connected
+        by a single edge yields [0].  Note that the order of edge identifers
+        are random."""
         if self.undirected() and u > v:
             u, v = v, u
         if not self.has_edge(u, v):
@@ -285,6 +279,7 @@ class Graph:
         return list(self.EO[u][v].keys())
 
     def get_edge_count(self, u, v):
+        """Return the number of multi-edges connecting vertices U and V."""
         ids = self.get_multiedge_ids(u, v)
         if ids:
             return len(ids)
@@ -292,6 +287,7 @@ class Graph:
             return 0
 
     def add_edge(self, u, v):
+        """Add an edge from vertex U to vertex V."""
         if self.undirected() and u > v:
             u, v = v, u
         count = self.get_edge_count(u, v)
@@ -300,62 +296,79 @@ class Graph:
             self.EO[u] = {}
         if not self.EO[u].get(v, None):
             self.EO[u][v] = {}
-        self.EO[u][v][count] = {}  # default vertex attribute
+        self.EO[u][v][count] = {}  # default edge attributes
         if not self.EI.get(v, None):
             self.EI[v] = {}
         if not self.EI[v].get(u, None):
             self.EI[v][u] = {}
-        self.EI[v][u][count] = {}  # default vertex attribute
+        self.EI[v][u][count] = {}  # default edge attributes
         return count
 
     def delete_edge(self, u, v):
+        """Delete an edge between vertices U and V.  If vertices are connected
+        with multiple edges, the one with the largest edge identifier is
+        deleted."""
         if self.undirected() and u > v:
             u, v = v, u
         if not self.has_edge(u, v):
-            return None
+            return
         count = self.get_edge_count(u, v) - 1
         del self.EO[u][v][count]
         del self.EI[v][u][count]
-        if (count == 0):
+        if count == 0:
             del self.EO[u][v]
             del self.EI[v][u]
         return count
 
     def edges_from(self, u, ignore=False):
+        """Return the list of edges leaving from vertex U.  This method fails
+        if the graph is undirected.  Error checking is bypassed if
+        IGNORE is true."""
         if not ignore:
             self.expect_directed()
         found = []
         for v in self.successors(u, ignore):
-            for count in self.get_multiedge_ids(u, v):
+            for id_ in self.get_multiedge_ids(u, v):
                 found.append([u, v])
         return found
 
     def edges_to(self, v, ignore=False):
+        """Return the list of edges coming to vertex U.  This method fails
+        if the graph is undirected.  Error checking is bypassed if
+        IGNORE is true."""
         if not ignore:
             self.expect_directed()
         found = []
         for u in self.predecessors(v, ignore):
-            for count in self.EI[v][u]:
+            for id_ in self.EI[v][u]:
                 found.append([u, v])
         return found
 
     def edges_at(self, v):
+        """Return the list of all edges connected to vertex V."""
         found = []
         found.extend(self.edges_from(v, ignore=True))
         found.extend(self.edges_to(v, ignore=True))
         return found
 
     def out_degree(self, u, ignore=False):
+        """Return the number outgoing edges connected to vertex U.  This
+        method fails if the graph is undirected.  Error checking is bypassed
+        if IGNORE is true."""
         if not ignore:
             self.expect_directed()
         return len(self.edges_from(u))
 
     def in_degree(self, v, ignore=False):
+        """Return the number incoming edges connected to vertex V.  This
+        method fails if the graph is undirected.  Error checking is bypassed
+        if IGNORE is true."""
         if not ignore:
             self.expect_directed()
         return len(self.edges_to(v))
 
     def degree(self, v):
+        """Return the number of edges connected to vetex V."""
         if self.undirected():
             return len(self.edges_at(v))
         else:
@@ -364,49 +377,79 @@ class Graph:
     vertex_degree = degree
 
     def random_edge(self):
+        """Randomly choose an edge from all edges."""
         return random.choice(self.edges())
 
-    def set_edge_attribute_by_id(self, u, v, id, attr, val):
+    def set_edge_attribute_by_id(self, u, v, n, attr, val):
+        """Define the attribute of the N-th edge between vertices U and V
+        named ATTR as value VAL."""
         if not attr:
-            warn('set_edge_attribute_by_id: no attribute specified.')
-
+            die('set_edge_attribute_by_id: no attribute specified.')
         if self.undirected() and u > v:
             u, v = v, u
-        self.EO[u][v].setdefault(id, {})
-        self.EO[u][v][id][attr] = val
+        if not self.has_edge(u, v):
+            die('set_edge_attribute_by_id: edge ({}, {}) not found'.format(
+                u, v))
+        self.EO[u][v].setdefault(n, {})
+        self.EO[u][v][n][attr] = val
 
-    def get_edge_attribute_by_id(self, u, v, id, attr):
+    def get_edge_attribute_by_id(self, u, v, n, attr):
+        """Return the attribute of the N-th edge between vertices U and V
+        named ATTR."""
         if not attr:
-            warn('get_edge_attribute_by_id: no attribute specified.')
+            die('get_edge_attribute_by_id: no attribute specified.')
         if self.undirected() and u > v:
             u, v = v, u
-        return self.EO[u][v][id].get(attr, None)
+        if not self.has_edge(u, v):
+            die('get_edge_attribute_by_id: edge ({}, {}) not found'.format(
+                u, v))
+        return self.EO[u][v][n].get(attr, None)
 
-    def set_edge_attributes_by_id(self, u, v, id, adict):
-        if self.undirected() and u > v:
-            u, v = v, u
+    def set_edge_attributes_by_id(self, u, v, n, adict):
+        """Define attributes of the N-th edge between vertices U and V from
+        dictionary ADICT."""
         for key, val in adict.items():
-            self.EO[u][v][id][key] = val
+            self.set_edge_attribute_by_id(u, v, n, key, val)
 
-    def get_edge_attributes_by_id(self, u, v, id):
+    def get_edge_attributes_by_id(self, u, v, n):
+        """Return all attributes of the N-th edge between vertices U and V as
+        dictionary."""
         if self.undirected() and u > v:
             u, v = v, u
-        return self.EO[u][v][id]
+        return self.EO[u][v].get(n, {})
 
-    def set_edge_weight_by_id(self, u, v, id, val):
-        return self.set_edge_attribute_by_id(u, v, id, 'weight', val)
+    def set_edge_weight_by_id(self, u, v, n, val):
+        """Set the edge weight of the N-th edge between vertices U and V to
+        value VAL."""
+        return self.set_edge_attribute_by_id(u, v, n, 'weight', val)
 
-    def get_edge_weight_by_id(self, u, v, id):
-        return self.get_edge_attribute_by_id(u, v, id, 'weight')
+    def get_edge_weight_by_id(self, u, v, n):
+        """Return the edge weight of the N-th edge between vertices U and
+        V."""
+        return self.get_edge_attribute_by_id(u, v, n, 'weight')
 
     def set_edge_weight(self, u, v, w):
+        """Set the weight of the first edge between vertices U and V to weight
+        W."""
         return self.set_edge_attribute_by_id(u, v, 0, 'weight', w)
 
     def get_edge_weight(self, u, v):
+        """Return the weight of the first edge between vertices U and V to
+        weight
+        W."""
         return self.get_edge_attribute_by_id(u, v, 0, 'weight')
 
     # algorithm ----------------------------------------------------------------
     def dijkstra(self, s):
+        """Compute all shortest paths from source vertex S using Dijkstra's
+        algorithm.  Return two dictionaries: DIST and PREV.  Dictionary DIST
+        records the distance to every vertex in the graph, and dictionary PREV
+        records the *previous* node along the shortest-path tree from source
+        vertex S.  For instance, DIST['4'] indicates the number of hops from
+        source vertex S to vertex '4'.  PREV['4'] indicates the preceeding
+        vertex in the shortest path from source vertex S to vertex 4.  You can
+        obtain the shortest path to vertex V by traversing dictionary PREV
+        from vertex V back to source node S."""
         self.expect_directed()
         dist = {}
         prev = {}
@@ -438,7 +481,11 @@ class Graph:
         return dist, prev
 
     def shortest_paths(self, s, t):
-        """Return the all shortest-paths from vertex S to vertex T."""
+        """Return the all shortest-paths from vertex S to vertex T.  Note that
+        the shortest path tree from source vertex S is cached for efficiency.
+        So, if the network topology is changed since the previous invocation
+        of shortest_paths(), you must explicitly call dijkstra() to renew the
+        shorte-path tree cache."""
 
         def find_path(s, t):
             # P[s] stores the shortest-path tree from vertex S.
@@ -457,45 +504,42 @@ class Graph:
         return list(find_path(s, t))
 
     def dijkstra_all_pairs(self):
+        """Compute all-pairs shortest paths using Dijkstra's algorithm."""
         for v in self.vertices():
             self.dijkstra(v)
 
     def floyd_warshall(self):
+        """Compute all-pairs shortest paths using Floyd-Warshall algorithm."""
         self.expect_directed()
+
         # initialize weight matrix
-        # NOTE: works well for sparse graphs
         path = {}
-        next = {}
+        next_ = {}
         for v in self.vertices():
             path[v] = {}
-            next[v] = {}
-
-        for e in self.edges():
-            path[e[0]][e[1]] = self.get_edge_weight_by_id(*e, 0) or 1
+            next_[v] = {}
+        for u, v in self.edges():
+            path[u][v] = self.get_edge_weight_by_id(u, v, 0) or 1
 
         # run Floyd-Warshall algorithm to find all-pairs shortest paths
-        # NOTE: Floyd-Warshall is good for _ in DENSE graphs:
-        INFINITY = 10**10
+        INFINITY = 2 << 30
         for k in self.vertices():
             for u in self.vertices():
                 for v in self.vertices():
-                    if path[u].get(k, INFINITY) + path[k].get(v, INFINITY) \
-                        < path[u].get(v, INFINITY):
+                    if path[u].get(k, INFINITY) + path[k].get(
+                            v, INFINITY) < path[u].get(v, INFINITY):
                         path[u][v] = path[u][k] + path[k][v]
-                        next[u][v] = k
+                        next_[u][v] = k
         self.T = path
 
     def is_reachable(self, u, v):
+        """Check if any path exists from vertex U to vertex V."""
         if not self.T.get(u, None):
             self.dijkstra(u)
         return self.T[u].get(v, None)
 
-    def is_connected(self):
-        v = self.random_vertex()
-        explored = self.explore(v)
-        return len(explored) == len(self.vertices())
-
     def explore(self, s):
+        """Return the list of all vertices reachable from vertex S."""
         explored = set()
         need_visit = set()
         need_visit.add(s)
@@ -505,10 +549,17 @@ class Graph:
             for v in self.neighbors(u):
                 if v not in explored:
                     need_visit.add(v)
-        return explored
+        return list(explored)
 
-    # return all components (i.e., connected subgraphs)
+    def is_connected(self):
+        """Check if all vertices in the graph are mutually connected."""
+        v = self.random_vertex()
+        explored = self.explore(v)
+        return len(explored) == len(self.vertices())
+
     def components(self):
+        """Return all components (i.e., connected subgraphs) of the graph.
+        Components are returned as list of vertices set."""
         components = []
         # record unvisisted vertices
         unvisited = set(self.vertices())
@@ -519,12 +570,13 @@ class Graph:
             components.append(explored)
             # remove all visisted vertices
             unvisited -= explored
-        # return components in descending order (?)
         return components
 
     def maximal_component(self):
-        components = sorted(self.components(), key=lambda x: len(x))
-        return components[-1]
+        """Return the largest component (i.e., the component with the largest
+        number of vertices)."""
+        maximal = max(self.components(), key=lambda x: len(x))
+        return maximal
 
     def betweenness(self, v):
         """Return the betweenness centrality for vertex v.  This program
@@ -540,7 +592,7 @@ class Graph:
                 u, v = self.random_edge()
                 w = self.get_edge_weight(u, v)
                 if w is not None and w != 1:
-                    die(f'Only supports unweighted graphs.')
+                    die('only supports unweighted graphs.')
 
             # betweenness centrality for vertices
             self.Cb = {v: 0 for v in self.vertices()}
@@ -583,33 +635,36 @@ class Graph:
 
     # graph ----------------------------------------------------------------
     def copy_graph(self):
-        T = Graph(directed=self.directed(), multiedged=self.multiedged())
+        """Return a copy of the graph."""
+        T = Graph(directed=self.directed())
+        # FIXME: preserve graph attributes
         for v in self.vertices():
             T.add_vertex(v)
             T.set_vertex_attributes(v, self.get_vertex_attributes(v))
-
-        for e in self.edges():
-            T.add_edge(*e)
-            for id in self.get_multiedge_ids(*e):
-                T.set_edge_attributes_by_id(*e, id, \
-                    self.get_edge_attributes_by_id(*e, id))
+        for u, v in self.edges():
+            T.add_edge(u, v)
+            for n in self.get_multiedge_ids(u, v):
+                T.set_edge_attributes_by_id(
+                    u, v, n, self.get_edge_attributes_by_id(u, v, n))
         return T
 
     def directed_copy(self):
-        T = Graph(directed=True, multiedged=self.multiedged())
+        """Return a directed copy of the graph.  Graph/vertex/edge attributed
+        are not copied."""
+        T = Graph(directed=True)
         for v in self.vertices():
             T.add_vertex(v)
-
-        for e in self.edges():
-            T.add_edge(*e)
+        for u, v in self.edges():
+            T.add_edge(u, v)
             if self.undirected():
-                T.add_edge(e[1], e[0])
-
+                T.add_edge(v, u)
         return T
 
     def complete_graph(self):
+        """Add edges to all vertex pairs to make the graph fully-meshed."""
         for u in self.vertices():
             for v in self.vertices():
+                # FIXME: works for directed/undirected graphs?
                 if u >= v:
                     continue
                 if not self.has_edge(u, v):
@@ -617,7 +672,8 @@ class Graph:
         return self
 
     def adjacency_matrix(self):
-        """Return the adjacency matrix of graph as NumPy.ndarray object."""
+        """Return the adjacency matrix of the graph as NumPy.ndarray
+        object."""
         N = len(self.vertices())
         m = numpy.zeros((N, N), int)
         for u, v in self.edges():
@@ -627,6 +683,7 @@ class Graph:
         return m
 
     def diagonal_matrix(self):
+        """Return the diagonal matrix of the graph as NumPy.ndarray object."""
         N = len(self.vertices())
         m = numpy.zeros((N, N), int)
         for v in self.vertices():
@@ -634,38 +691,48 @@ class Graph:
         return m
 
     def laplacian_matrix(self):
+        """Return the Laplacian matrix of the graph as NumPy.ndarray
+        object."""
         return self.diagonal_matrix() - self.adjacency_matrix()
 
     def adjacency_matrix_eigvals(self):
+        """Return eigenvalues of the adjacency matrix."""
         return sorted(numpy.linalg.eigvals(self.adjacency_matrix()))
 
     def laplacian_matrix_eigvals(self):
+        """Return eigenvalues of the Laplacian matrix."""
         return sorted(numpy.linalg.eigvals(self.laplacian_matrix()))
 
     def spectral_radius(self):
+        """Return the spectral raduis from spectral graph theory."""
         lmbda = self.adjacency_matrix_eigvals()
         return lmbda[-1]
 
     def spectral_gap(self):
+        """Return the spectral gap from spectral graph theory."""
         lmbda = self.adjacency_matrix_eigvals()
         return lmbda[-1] - lmbda[-2]
 
     def natural_connectivity(self):
+        """Return the natural connectivity from spectral graph theory."""
         N = len(self.vertices())
         lmbda = self.adjacency_matrix_eigvals()
         return math.log(sum(numpy.exp(lmbda)) / N)
 
     def algebraic_connectivity(self):
+        """Return the argebraic connectivity from spectral graph theory."""
         mu = self.laplacian_matrix_eigvals()
         return mu[1]
 
     def effective_resistance(self):
+        """Return the effective resistance from spectral graph theory."""
         N = len(self.vertices())
         mu = self.laplacian_matrix_eigvals()
         print(mu)
         return N * sum([1 / (mu + 1e-100) for mu in mu[1:]])
 
     def spanning_tree_count(self):
+        """Return the spanning tree count from spectral graph theory."""
         N = len(self.vertices())
         mu = self.laplacian_matrix_eigvals()
         return functools.reduce(lambda x, y: x * y,
@@ -674,29 +741,32 @@ class Graph:
     # util ----------------------------------------------------------------
     def header_string(self, comment='# '):
         date = time.strftime('%Y/%M/%D %H:%M:%S', time.localtime())
-        type = 'directed' if self.is_directed() else 'undirected'
+        atype = 'directed' if self.is_directed() else 'undirected'
         vcount = len(self.vertices())
         ecount = len(self.edges())
-        astr = f"""{comment}Generated by graphtools (version 1.0) at {date}
-{comment}{type}, {vcount} vertices, {ecount} edges
-"""
+        astr = """{}Generated by graph-tools (version 1.0) at {}
+{}{}, {} vertices, {} edges
+""".format(comment, date, comment, atype, vcount, ecount)
         return astr
 
     # create ----------------------------------------------------------------
     def create_graph(self, atype, *args):
         name = CREATE_SUBP.get(atype, None)
         if not name:
-            warn(f"No graph creation support for type `{type}'")
+            warn(
+                "create_graph: no graph creation support for type '{}'".format(
+                    atype))
             return None
         method = getattr(self, name, None)
         if not method:
-            warn(f"Graph creation method `{name}' not found")
+            warn("create_graph: graph creation method '{name}' not found".
+                 format(name))
             return None
         return method(*args)
 
     def create_random_graph(self, N=10, E=20, no_multiedge=False):
         if E < N:
-            die('Too small number of edges')
+            die('create_random_graph: too small number of edges')
 
         for v in range(1, N + 1):
             self.add_vertex(v)
@@ -705,7 +775,7 @@ class Graph:
         for i in range(1, N):
             u = i + 1
             v = random.randrange(1, u)
-            if random.uniform(0, 1) >= 0.5:
+            if random.uniform(0, 1) >= .5:
                 self.add_edge(u, v)
             else:
                 self.add_edge(v, u)
@@ -1214,7 +1284,8 @@ class Graph:
         name = IMPORT_SUBP.get(fmt, None)
         method = getattr(self, name, None)
         if not name or not method:
-            die(f"No import support for graph format `{fmt}'")
+            die("import_graph: no import support for graph format '{fmt}'".
+                format(fmt))
         return method(*args)
 
     def import_dot(self, lines):
@@ -1230,11 +1301,26 @@ class Graph:
         buf = re.sub(r'/\*.*?\*/', '', buf)
         m = re.search(r'graph\s+(\S+)\s*{(.*)}', buf)
         if not m:
-            die('Invalid graph format (missing dot graph header)')
+            die('import_dot: invalid graph format (missing dot graph header)')
         body = m.group(2)
         return self._import_dot_body(body)
 
     def _import_dot_body(self, body_str):
+        def str2number(v):
+            # FIXME: shoud not check type
+            if type(v) != str:
+                return v
+            # remove preceeding/trailing spaces
+            v = v.strip()
+            if v.startswith('0x'):
+                return int(v, 16)
+            elif re.match(r'[\d+-]+$', v):
+                return int(v)
+            elif re.match(r'[\d.eE+-]+$', v):
+                return float(v)
+            else:
+                return v
+
         for line in body_str.split(';'):
             line = line.strip()
             if not line:
@@ -1271,43 +1357,13 @@ class Graph:
                 self.add_vertex(v)
                 self.set_vertex_attributes(v, attrs)
 
-    def import_dot_quick(self, listp):
-        raise NotImplementedError
-
-    def import_dimacs(self, listp):
-        raise NotImplementedError
-
-    def import_inet(self, listp):
-        raise NotImplementedError
-
-    def import_brite(self, listp):
-        raise NotImplementedError
-
-    def import_gw(self, listp):
-        raise NotImplementedError
-
-    def import_nsnode(self, listp):
-        raise NotImplementedError
-
-    def import_nsagent(self, listp):
-        raise NotImplementedError
-
-    def import_metis(self, listp):
-        raise NotImplementedError
-
-    def import_edge(self, listp):
-        raise NotImplementedError
-
-    def import_cell(self, listp):
-        raise NotImplementedError
-
     # ----------------------------------------------------------------
-
     def export_graph(self, fmt, *args):
         name = EXPORT_SUBP.get(fmt, None)
         method = getattr(self, name, None)
         if not name or not method:
-            die(f"No export support for graph format `{fmt}'")
+            die("export_graph: no export support for graph format '{fmt}'".
+                format(fmt))
         return method(*args)
 
     def export_dot(self, *args):
@@ -1342,58 +1398,7 @@ class Graph:
         astr += '}\n'
         return astr
 
-    def export_dimacs(self):
-        raise NotImplementedError
-
-    def export_inet(self):
-        raise NotImplementedError
-
-    def export_brite(self):
-        raise NotImplementedError
-
-    def export_gw(self):
-        raise NotImplementedError
-
-    def export_nsnode(self):
-        raise NotImplementedError
-
-    def export_nsagent(self):
-        raise NotImplementedError
-
-    def export_nsagent_edge(self, N):
-        raise NotImplementedError
-
-    def export_nsagent_udp(self):
-        raise NotImplementedError
-
-    def export_metis(self):
-        raise NotImplementedError
-
-    def is_included(v, partp, n):
-        raise NotImplementedError
-
-    # return IP address of link U-V at side W in N-th partition
-    # FIXME: assuming number of nodes < 256
-    def get_link_ipaddr(u, v, w, n):
-        raise NotImplementedError
-
-    # return IP address of remote link U-V at side W
-    # FIXME: assuming number of nodes < 256
-    def get_rlink_ipaddr(u, v, w):
-        raise NotImplementedError
-
-    def export_pdnsnode(self, partp, n):
-        raise NotImplementedError
-
-    def export_pdnsagent(T, partp, n, self):
-        raise NotImplementedError
-
-    def export_gdl(self):
-        raise NotImplementedError
-
-    def export_cell(self):
-        raise NotImplementedError
-
+    # aliases
     is_directed = directed
     is_undirected = undirected
     is_multiedged = multiedged
@@ -1406,7 +1411,6 @@ def main():
     g.create_voronoi_graph()
     s = g.export_dot()
     print(s)
-    raise
 
 if __name__ == "__main__":
     main()
