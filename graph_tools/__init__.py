@@ -1278,6 +1278,7 @@ class Graph:
                                              replace=False,
                                              p=prob):
                     _add_edge(u, v)
+        return self
 
     # import ----------------------------------------------------------------
     def import_graph(self, fmt, *args):
