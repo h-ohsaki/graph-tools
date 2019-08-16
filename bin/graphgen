@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+
+import os
+import random
+import re
+import sys
+
+from perlcompat import die, getopts
+import graph_tools
+
+def usage():
+    prog = os.path.basename(sys.argv[0])
+    types = '/'.join(graph_tools.CREATE_TYPES)
+    export_fmts = '/'.join(graph_tools.EXPORT_FORMATS)
+    die(f"""
+usage: {prog} [-du] [-t type] [-s seed] [-o format] params...
+  -d         generate directed graph (default)
+  -u         generate undirected graph
+  -t type    specify graph type ({types})
+             (parameters) random/random_sparse: N E [no_multiedge]
+                          barabasi/ba: N m0 m
+                          barandom: N E m0
+  			  general_ba: N m0 m gamma
+                          ring: N step
+                          tree: N
+			  btree:
+			  latent: N E error_ratio 
+                                  [confer abs/binary/linear/sigmoid] 
+				  [dist uniform/normal/exponential]
+			  treeba: N alpha
+			  lattice: dim n [is_torus]
+			  voronoi: n width height
+                          degree_bounded/db: N E
+                          configuration [degree_seq]
+                          li_maini: T M m0 m alpha n
+  -s seed    specify random number seed
+  -o format  output graph format ({export_fmts})
+""")
+
+def main():
+    opt = getopts('dut:s:o:') or usage()
+    directed = opt.d if opt.d else not opt.u
+    atype = opt.t if opt.t else 'random'
+    seed = opt.s
+    out_format = opt.o if opt.o else 'dot'
+
+    if seed:
+        random.seed(seed)
+
+    def validate_params(list_):
+        params = []
+        for param in list_:
+            try:
+                klass = type(eval(param))
+                if klass == int:
+                    param = int(param)
+                elif klass == float:
+                    param = float(param)
+                elif klass == bool:
+                    param = True if param == 'True' else False
+                else:
+                    param = map(int, param.split(','))
+                    param = list(param)
+            except:
+                pass
+
+            params.append(param)
+        return params
+
+    g = graph_tools.Graph(directed)
+    g = g.create_graph(atype, *validate_params(sys.argv[1:]))
+    print(g.export_graph(out_format))
+
+if __name__ == "__main__":
+    main()
