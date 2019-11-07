@@ -634,9 +634,11 @@ class Graph:
         return self.Cb[v]
 
     # graph ----------------------------------------------------------------
-    def copy_graph(self):
+    def copy_graph(self, directed=None):
         """Return a copy of the graph."""
-        T = Graph(directed=self.directed())
+        if directed is None:
+            directed = self.directed()
+        T = Graph(directed)
         # FIXME: preserve graph attributes
         for v in self.vertices():
             T.add_vertex(v)
@@ -649,16 +651,8 @@ class Graph:
         return T
 
     def directed_copy(self):
-        """Return a directed copy of the graph.  Graph/vertex/edge attributed
-        are not copied."""
-        T = Graph(directed=True)
-        for v in self.vertices():
-            T.add_vertex(v)
-        for u, v in self.edges():
-            T.add_edge(u, v)
-            if self.undirected():
-                T.add_edge(v, u)
-        return T
+        """Return a directed copy of the graph."""
+        return self.copy_graph(directed=True)
 
     def complete_graph(self):
         """Add edges to all vertex pairs to make the graph fully-meshed."""
@@ -1278,6 +1272,8 @@ class Graph:
                                              replace=False,
                                              p=prob):
                     _add_edge(u, v)
+
+        return self
 
     # import ----------------------------------------------------------------
     def import_graph(self, fmt, *args):
