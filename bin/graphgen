@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+#
+# Generate a graph and dump in standard output.
+# Copyright (c) 2019, Hiroyuki Ohsaki.
+# All rights reserved.
+#
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+import random
+import sys
+
+from perlcompat import die, warn, getopts
+import graph_tools
+
+def usage():
+    types = '/'.join(graph_tools.CREATE_TYPES)
+    export_fmts = '/'.join(graph_tools.EXPORT_FORMATS)
+    die("""\
+usage: {} [-du] [-t type] [-s seed] [-o format] [param...]
+  -d         generate directed graph (default)
+  -u         generate undirected graph
+  -t type    specify graph type ({})
+             (parameters) random/random_sparse: N E [no_multiedge]
+                          barabasi/ba: N m0 m
+                          barandom: N E m0
+  			  general_ba: N m0 m gamma
+                          ring: N step
+                          tree: N
+			  btree:
+			  latent: N E error_ratio 
+                                  [confer abs/binary/linear/sigmoid] 
+				  [dist uniform/normal/exponential]
+			  treeba: N alpha
+			  lattice: dim n [is_torus]
+			  voronoi: n width height
+  -s seed    specify random number seed
+  -o format  output graph format ({})
+""".format(sys.argv[0], types, export_fmts))
+
+def main():
+    opt = getopts('dut:s:o:') or usage()
+    directed = False if opt.u else True
+    atype = opt.t if opt.t else 'random'
+    seed = opt.s if opt.s else 1
+    out_format = 'dot'
+    args = map(int, sys.argv[1:])
+
+    random.seed(seed)
+    g = graph_tools.Graph(directed=directed)
+    g = g.create_graph(atype, *args)
+    print(g.export_graph(out_format))
+
+if __name__ == "__main__":
+    main()
