@@ -486,7 +486,6 @@ class Graph:
         So, if the network topology is changed since the previous invocation
         of shortest_paths(), you must explicitly call dijkstra() to renew the
         shorte-path tree cache."""
-
         def find_path(s, t):
             # P[s] stores the shortest-path tree from vertex S.
             # P{s][t] is a set of previous nodes in the shortest-path tree.
@@ -583,7 +582,6 @@ class Graph:
         implements Algorithm 1 (betweenness centrality in unweighted graphs)
         in U. Brandes, `A Fast Algorithm for Betweeness Centrality,' Journal
         of Mathematical Sociology, 2001."""
-
         def _update_betweenness():
             self.expect_undirected()
 
@@ -1122,7 +1120,6 @@ class Graph:
         """Generate a graph using Newman's configuration model.  DEGREE_SEQ is
         a list of degrees for every vertex.  Different from common
         implementations, this code never generates self-loops and multi-edges."""
-
         def _connect_randomly(N, stubs_):
             self.__init__(directed=False)
             self.add_vertices(*range(1, N + 1))
@@ -1336,7 +1333,11 @@ class Graph:
                 if not pair:
                     break
                 akey, aval = pair.split('=', 2)
-                attrs[akey] = aval.replace('\"', '')
+                if akey == 'weight':
+                    aval = float(aval)
+                else:
+                    aval = aval.replace('\"', '')
+                attrs[akey] = aval
 
             # parse vertex/edge definition
             # FIXME: this might be problematic...
