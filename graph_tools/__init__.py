@@ -569,7 +569,7 @@ class Graph:
             explored = self.explore(v)
             components.append(explored)
             # remove all visisted vertices
-            unvisited -= explored
+            unvisited -= set(explored)
         return components
 
     def maximal_component(self):
