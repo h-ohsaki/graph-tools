@@ -64,6 +64,7 @@ IMPORT_FORMATS = sorted(IMPORT_SUBP.keys())
 
 EXPORT_SUBP = {
     'dot': 'export_dot',
+    'cell': 'export_cell',
 }
 EXPORT_FORMATS = sorted(EXPORT_SUBP.keys())
 
@@ -1357,8 +1358,9 @@ class Graph:
     # ----------------------------------------------------------------
     def export_graph(self, fmt, *args):
         name = EXPORT_SUBP.get(fmt, None)
-        method = getattr(self, name, None)
-        if not name or not method:
+        try:
+            method = getattr(self, name, None)
+        except TypeError:
             die("export_graph: no export support for graph format '{fmt}'".
                 format(fmt))
         return method(*args)
@@ -1394,6 +1396,25 @@ class Graph:
                 astr += ';\n'
         astr += '}\n'
         return astr
+
+    def export_cell(self, *args):
+        out = """\
+#define v_size 4 4
+#define v_color yellow
+#define e_width 1
+#define e_color blue
+"""
+        for v in sorted(self.vertices()):
+            out += 'define v{} ellipse v_size v_color\n'.format(v)
+        n = 1
+        for u, v in sorted(self.edges()):
+            out += 'define e{} link v{} v{} e_width e_color\n'.format(n, u, v)
+            n += 1
+
+        out += 'spring /^v/\n'
+        out += 'display\n'
+        out += 'wait\n'
+        return out
 
     # aliases
     is_directed = directed
