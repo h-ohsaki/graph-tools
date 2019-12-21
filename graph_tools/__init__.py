@@ -4,8 +4,6 @@
 # Copyright (c) 2018-2019, Hiroyuki Ohsaki.
 # All rights reserved.
 #
-# $Id: graphtools.py,v 1.33 2019/07/05 17:34:20 ohsaki Exp $
-#
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -642,11 +640,17 @@ class Graph:
         for v in self.vertices():
             T.add_vertex(v)
             T.set_vertex_attributes(v, self.get_vertex_attributes(v))
+        directed_from_undirected = directed and not self.directed()
         for u, v in self.edges():
             T.add_edge(u, v)
+            if directed_from_undirected:
+                T.add_edge(v, u)
             for n in self.get_multiedge_ids(u, v):
                 T.set_edge_attributes_by_id(
                     u, v, n, self.get_edge_attributes_by_id(u, v, n))
+                if directed_from_undirected:
+                    T.set_edge_attributes_by_id(
+                        v, u, n, self.get_edge_attributes_by_id(u, v, n))
         return T
 
     def directed_copy(self):
