@@ -1,0 +1,87 @@
+head	1.2;
+access;
+symbols;
+locks
+	ohsaki:1.2; strict;
+comment	@# @;
+
+
+1.2
+date	2019.07.06.13.47.43;	author ohsaki;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2018.05.26.16.37.30;	author ohsaki;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.2
+log
+@*** empty log message ***
+@
+text
+@#!/usr/bin/env python3
+
+from test_more import ok, eq
+from graphtools import Graph
+
+g = Graph(directed=True)
+ok(g)
+ok(g.is_directed())
+ok(not g.is_undirected())
+
+g.add_vertices(1, 2, 3, 4)
+ok(g.has_vertex(1))
+ok(g.has_vertex(2))
+ok(g.has_vertex(3))
+ok(g.has_vertex(4))
+ok(not g.has_vertex(5))
+ok(not g.has_vertex(0))
+
+g.add_edge(1, 2)
+g.add_edge(1, 2)
+g.add_edge(2, 3)
+g.add_edge(3, 4)
+ok(g.has_edge(1, 2))
+ok(g.has_edge(2, 3))
+ok(not g.has_edge(2, 1))
+ok(not g.has_edge(1, 3))
+ok(not g.has_edge(4, 1))
+
+eq(len(g.vertices()), 4)
+eq(len(g.successors(1)), 1)
+eq(len(g.predecessors(1)), 0)
+eq(len(g.neighbors(1)), 1)
+eq(len(g.neighbors(2)), 2)
+
+eq(len(g.edges()), 4)
+eq(len(g.unique_edges()), 3)
+eq(len(g.edges_from(1)), 2)
+eq(len(g.edges_to(1)), 0)
+eq(len(g.edges_at(1)), 2)
+eq(len(g.edges_from(2)), 1)
+eq(len(g.edges_to(2)), 2)
+eq(len(g.edges_at(2)), 3)
+
+eq(g.degree(1), 2)
+eq(g.degree(2), 3)
+eq(g.in_degree(1), 0)
+eq(g.out_degree(1), 2)
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d3 1
+a3 1
+from simpletest import ok, eq
+@

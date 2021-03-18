@@ -1,0 +1,91 @@
+head	1.3;
+access;
+symbols;
+locks
+	ohsaki:1.3; strict;
+comment	@# @;
+
+
+1.3
+date	2019.07.06.13.47.43;	author ohsaki;	state Exp;
+branches;
+next	1.2;
+
+1.2
+date	2018.05.26.17.11.29;	author ohsaki;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2018.05.26.15.38.24;	author ohsaki;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.3
+log
+@*** empty log message ***
+@
+text
+@#!/usr/bin/env python3
+
+from test_more import ok, eq
+from graphtools import Graph
+
+g = Graph(directed=True, multiedged=True)
+g = g.create_graph('btree', 15)
+ok(g)
+eq(len(g.vertices()), 15)
+eq(len(g.edges()), 15 - 1)
+
+g = Graph(directed=True, multiedged=True)
+g = g.create_graph('btree', 100)
+ok(g)
+eq(len(g.vertices()), 100)
+eq(len(g.edges()), 100 - 1)
+
+g = Graph(directed=False, multiedged=True)
+g = g.create_graph('btree', 10)
+ok(g)
+eq(len(g.vertices()), 10)
+eq(len(g.edges()), 10 - 1)
+ok(g.is_connected())
+@
+
+
+1.2
+log
+@*** empty log message ***
+@
+text
+@d3 1
+a3 1
+from simpletest import ok, eq
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d3 1
+a3 1
+from simpletest import ok
+d9 2
+a10 2
+ok(len(g.vertices()) == 15)
+ok(len(g.edges()) == 15 - 1)
+d15 2
+a16 2
+ok(len(g.vertices()) == 100)
+ok(len(g.edges()) == 100 - 1)
+d21 2
+a22 2
+ok(len(g.vertices()) == 10)
+ok(len(g.edges()) == 10 - 1)
+@
