@@ -1,0 +1,52 @@
+head	1.2;
+access;
+symbols;
+locks
+	ohsaki:1.2; strict;
+comment	@# @;
+
+
+1.2
+date	2019.07.06.13.47.43;	author ohsaki;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2018.05.26.16.23.44;	author ohsaki;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.2
+log
+@*** empty log message ***
+@
+text
+@#!/usr/bin/env python3
+
+from test_more import ok
+from graphtools import Graph
+
+g = Graph(directed=False)
+
+g.add_edge(1, 2)
+g.add_edge(2, 3)
+g.add_vertex(4)
+ok(len(g.components()) == 2)
+ok(len(g.maximal_component()) == 3)
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d3 1
+a3 1
+from simpletest import ok
+@

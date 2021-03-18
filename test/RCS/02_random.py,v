@@ -1,0 +1,96 @@
+head	1.3;
+access;
+symbols;
+locks
+	ohsaki:1.3; strict;
+comment	@# @;
+
+
+1.3
+date	2019.07.06.13.47.43;	author ohsaki;	state Exp;
+branches;
+next	1.2;
+
+1.2
+date	2018.05.26.17.09.15;	author ohsaki;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2018.05.26.15.38.14;	author ohsaki;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.3
+log
+@*** empty log message ***
+@
+text
+@#!/usr/bin/env python3
+
+from test_more import ok, eq
+from graphtools import Graph
+
+g = Graph(directed=False, multiedged=True)
+g = g.create_graph('unknown')
+ok(not g)
+
+g = Graph(directed=True, multiedged=True)
+g = g.create_graph('random', 4, 10)
+ok(g)
+eq(len(g.vertices()), 4)
+eq(len(g.edges()), 10)
+ok(g.is_connected())
+
+g = Graph(directed=True, multiedged=True)
+g = g.create_graph('random', 40, 100)
+ok(g)
+eq(len(g.vertices()), 40)
+eq(len(g.edges()), 100)
+ok(g.is_connected())
+
+g = Graph(directed=True, multiedged=True)
+g = g.create_graph('random', 4, 10)
+ok(g)
+eq(len(g.vertices()), 4)
+eq(len(g.edges()), 10)
+@
+
+
+1.2
+log
+@*** empty log message ***
+@
+text
+@d3 1
+a3 1
+from simpletest import ok, eq
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d3 1
+a3 1
+from simpletest import ok
+d13 2
+a14 2
+ok(len(g.vertices()) == 4)
+ok(len(g.edges()) == 10)
+d20 2
+a21 2
+ok(len(g.vertices()) == 40)
+ok(len(g.edges()) == 100)
+d27 2
+a28 2
+ok(len(g.vertices()) == 4)
+ok(len(g.edges()) == 10)
+@
