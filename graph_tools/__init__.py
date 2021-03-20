@@ -1334,15 +1334,15 @@ class Graph:
 
             # parse attributes [name1=val1,name2=val2...]
             attrs = {}
-            for pair in opts.split(','):
-                if not pair:
-                    break
-                akey, aval = pair.split('=', 2)
+            while opts:
+                m = re.match(r'(\s*([^=]+)\s*=\s*(\".*?\"|[^,]+)\s*,?)', opts)
+                akey, aval = m.group(2), m.group(3)
                 if akey == 'weight':
                     aval = float(aval)
                 else:
                     aval = aval.replace('\"', '')
                 attrs[akey] = aval
+                opts = opts.replace(m.group(1), '')
 
             # parse vertex/edge definition
             # FIXME: this might be problematic...
