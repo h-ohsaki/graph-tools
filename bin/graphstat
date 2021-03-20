@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+
+import fileinput
+import math
+import os
+import sys
+
+from perlcompat import die, getopts
+import graph_tools
+
+STAT_SUBP = {
+    'nodes': lambda *args: len(args[0].vertices()),
+    'edges': lambda *args: len(args[0].edges()),
+    'degree': lambda *args: args[0].average_degree(),
+    'dstddev': lambda *args: math.sqrt(variance(args[0].get_graph_attribute('degree'))),
+    'dmin': lambda *args: min(args[0].get_graph_attribute('degree')),
+    'dmax': lambda *args: max(args[0].get_graph_attribute('degree')),
+    'direct': lambda *args: args[0].is_directed(),
+    'connect': lambda *args: args[0].is_connected(),
+    'clcoeff': lambda *args: clustering_coefficient(args[0]),
+    'pathlen': lambda *args: average_path_length(args[0]),
+    'maxcomp': lambda *args: len(args[0].maximal_component()),
+}
+
+def usage():
+    prog = os.path.basename(sys.argv[0])
+    import_fmts = '/'.join(graph_tools.IMPORT_FORMATS)
+    die(f"""
+usage: {prog} [-vdu] [-t type[,type]] [-i format] [file...]
+  -v              verbose mode
+  -d              directed graph (default)
+  -u              undirected graph
+  -t type[,type]  specify statistic to display (nodes/edges/degree/dstddev/dmin/dmax/direct/connect/clcoeff/pathlen/maxcomp)
+  -i format  input graph format ({import_fmts})
+""")
+
+def mean(alist):
+    return sum(alist) / len(alist)
+
+def variance(alist):
+    mean_ = mean(alist)
+    _ = [(val - mean_) ** 2 for val in alist]
+    return mean(_)
+
+def format_number(n=0):
+    return f'{n:14.4f}' if n < 10 ** 10 else f'{n:14.4g}'
+
+def clustering_coefficient(g):
+    total, count = 0, 0
+    for v in g.vertices():
+        degree = g.degree(v)
+        if degree < 2:
+            continue
+
+        # count number of opposite edges
+        m = 0
+        for u in g.neighbors(v):
+            for w in g.neighbors(v):
+                if u < w:
+                    continue
+                if g.has_edge(u, w) or g.has_edge(w, u) :
+                    m += 1
+        total += m / ((degree * (degree - 1)) / 2)
+        count += 1
+    return total / count
+
+def average_path_length(g):
+    g.floyd_warshall()
+    total, count = 0, 0
+    for u in g.vertices():
+        for v in g.vertices():
+            if u == v:
+                continue
+            if not g.T[u].get(v, None):
+                continue
+            total += g.T[u][v]
+            count += 1
+    return total / count if count else 0
+
+def main():
+    opt = getopts('vdut:i:') or usage()
+    verbose = opt.v
+    directed = opt.d if opt.d else not opt.u
+    stat_type = ['nodes', 'edges', 'degree', 'dstddev', 'dmin', 'dmax', 'direct', 'clcoeff']
+    if opt.t:
+        stat_type = opt.t.split(',')
+    in_format = opt.i if opt.i else 'dot'
+
+    # load graph
+    g = graph_tools.Graph(directed)
+    g.import_graph(in_format, list(fileinput.input()))
+
+    # cache degree information as graph's attribute
+    degree = [g.vertex_degree(v) for v in sorted(g.vertices())]
+    g.set_graph_attribute('degree', degree)
+
+    for atype in stat_type:
+        func = STAT_SUBP.get(atype, None)
+        if not func:
+            die(f"no support for '{atype}'")
+        val = func(g)
+        if verbose:
+            print(f"{atype}\t", end='')
+        print(format_number(val))
+
+if __name__ == "__main__":
+    main()
