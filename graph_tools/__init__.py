@@ -1490,17 +1490,16 @@ class Graph:
         return astr
 
     def export_cell(self, *args):
-        out = """\
-#define v_size 4 4
-#define v_color yellow
-#define e_width 1
-#define e_color blue
-"""
+        v_size = 12
+        v_color = 'white'
+        e_width = 1
+        e_color = 'blue'
+        out = ''
         for v in sorted(self.vertices()):
-            out += f'define v{v} ellipse v_size v_color\n'
+            out += f'define v{v} text {v} {v_size} {v_color}\n'
         n = 1
         for u, v in sorted(self.edges()):
-            out += f'define e{n} link v{u} v{v} e_width e_color\n'
+            out += f'define e{n} link v{u} v{v} {e_width} {e_color}\n'
             n += 1
 
         out += 'spring /^v/\n'
