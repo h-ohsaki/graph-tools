@@ -73,6 +73,9 @@ EXPORT_SUBP = {
 }
 EXPORT_FORMATS = sorted(EXPORT_SUBP.keys())
 
+EPS = 1e-10
+INFINITY = 2 << 30
+
 MAX_RETRIES = 100
 
 class Graph:
@@ -147,10 +150,11 @@ class Graph:
         return statistics.mean(ratios)
 
     def average_path_length(self):
-        self.floyd_warshall()
+        if not self.T:
+            self.floyd_warshall()
         lengths = []
         for u, v in itertools.permutations(self.vertices(), 2):
-            if self.is_reachable(u, v):
+            if u in self.T and v in self.T[u]:
                 lengths.append(self.T[u][v])
         return statistics.mean(lengths)
 
@@ -480,7 +484,7 @@ class Graph:
         vertex in the shortest path from source vertex S to vertex 4.  You can
         obtain the shortest path to vertex V by traversing dictionary PREV
         from vertex V back to source node S."""
-        self.expect_directed()
+        self.expect_undirected()
         dist = {}
         prev = {}
         for v in self.vertices():
@@ -489,14 +493,14 @@ class Graph:
 
         S = []
         Q = self.vertices()
-        INFINITY = 2 << 30
         while Q:
             Q = sorted(Q, key=lambda x: dist.get(x, INFINITY))
             u = Q.pop(0)
             if dist.get(u, None) is None:
                 break
             S.append(u)
-            for v in self.successors(u):
+            # NOTE: Use successors() for directeg graph.
+            for v in self.neighbors(u):
                 # FIXME: Must reject multi-edged graph.
                 w = self.get_edge_weight_by_id(u, v, 0) or 1
                 if dist.get(v, None) is None or dist[v] > (
@@ -526,11 +530,19 @@ class Graph:
                     for path in find_path(s, prev):
                         yield path + [t]
 
-        self.expect_directed()
+        # self.expect_directed()
         # Build shortest-path tree if not cached yet.
         if not s in self.P:
             self.dijkstra(s)
         return find_path(s, t)
+
+    def shortest_path_length(self, s, t):
+        if s not in self.T or t not in self.T[s]:
+            self.dijkstra(s)
+        if t in self.T[s]:
+            return self.T[s][t]
+        else:
+            return INFINITY
 
     def dijkstra_all_pairs(self):
         """Compute all-pairs shortest paths using Dijkstra's algorithm."""
@@ -539,7 +551,7 @@ class Graph:
 
     def floyd_warshall(self):
         """Compute all-pairs shortest paths using Floyd-Warshall algorithm."""
-        self.expect_directed()
+        # self.expect_directed()
         # Initialize weight matrix.
         path = {}
         next_ = {}
@@ -658,6 +670,14 @@ class Graph:
         if not v in self.Cb:
             _update_betweenness()
         return self.Cb[v]
+
+    def eccentricity(self, v):
+        lengths = [self.shortest_path_length(v, u) for u in self.vertices()]
+        return max(lengths)
+
+    def eccentricities(self):
+        for v in self.vertices():
+            yield self.eccentricity(v)
 
     # graph ----------------------------------------------------------------
     def copy_graph(self, directed=None):
@@ -785,21 +805,19 @@ class Graph:
             return None
         return method(*args, **kwargs)
 
-    def create_random_graph(self, N=10, E=20, no_multiedge=False):
+    def create_random_graph(self, N=10, E=20, multiedged=False):
         """Create an instance of *connected* random graphs with N vertices and
-        E edges.  A generated graph might be multiedged.  You can specify
-        NO_MULTIEDGE to force a single-edged graph."""
+        E edges.  A generated graph is non-multiedged.  You can specify
+        MULTIEDGED to allow a multiedged graph."""
         if E < N:
             die('create_random_graph: too small number of edges')
-
-        for v in range(1, N + 1):
-            self.add_vertex(v)
+        self.add_vertices(*range(1, N + 1))
 
         # Add first (N - 1) edges for making sure connectivity.
         for i in range(1, N):
             u = i + 1
             v = random.randrange(1, u)
-            if random.uniform(0, 1) >= .5:
+            if random.random() <= .5:
                 self.add_edge(u, v)
             else:
                 self.add_edge(v, u)
@@ -809,12 +827,15 @@ class Graph:
             # FIXME: Avoid cycle edges, but this may take log time.
             ntries = 1
             while ntries < MAX_RETRIES:
-                u = random.randrange(1, N + 1)
-                v = random.randrange(1, N + 1)
-                if not no_multiedge and u != v:
+                u = self.random_vertex()
+                v = self.random_vertex()
+                if u == v:
+                    continue
+                if multiedged:
                     break
-                if no_multiedge and u != v and not self.has_edge(u, v):
-                    break
+                else:
+                    if not self.has_edge(u, v):
+                        break
             self.add_edge(u, v)
         return self
 
@@ -955,7 +976,7 @@ class Graph:
 
     # Tree BA graph.
     def create_treeba_graph(self, N=10, alpha=1):
-        self.expect_directed()
+        # self.expect_directed()
         attract = [0] * N
         # Create an initial vertex.
         v = 1
