@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 # Generate a graph and dump in standard output.
-# Copyright (c) 2019, Hiroyuki Ohsaki.
+# Copyright (c) 2019-2023, Hiroyuki Ohsaki.
 # All rights reserved.
 #
 
@@ -36,22 +36,26 @@ usage: {prog} [-du] [-t type] [-s seed] [-o format] params...
   -d         generate directed graph (default)
   -u         generate undirected graph
   -t type    specify graph type ({types})
-             (parameters) random/random_sparse: N E [no_multiedge]
-                          barabasi/ba: N m0 m
-                          barandom: N E m0
-  			  general_ba: N m0 m gamma
-                          ring: N step
-                          tree: N
-			  btree:
-			  latent: N E error_ratio 
-                                  [confer abs/binary/linear/sigmoid] 
-				  [dist uniform/normal/exponential]
-			  treeba: N alpha
-			  lattice: dim n [is_torus]
-			  voronoi: n width height
-                          degree_bounded/db: N E
-                          configuration [degree_seq]
-                          li_maini: T M m0 m alpha n
+             parameters (defaults):
+                 random/random_sparse: [N [E [no_multiedge]]] (N=20, E=10)
+                 erdos_renyi/er: [N [p]] (N=10, p=0.5)
+                 barabasi/ba: [N [m [m0]]] (N=10, m=2, m0=2)
+                 barandom: [N [E [m0]]] (N=10, E=10, m0=2)
+                 ring: [N [step]] (N=10, step=1)
+                 tree: [N] (N=10)
+	         btree: [N] (N=10)
+	         treeba: [N [alpha]] (N=10, alpha=1)
+  	         general_ba: [N [m [gamma [m0]]]] (N=10, m=2, gamma=3, m0=2)
+	         latent: [N [E [error_ratio [confer [dist [alpha]]]]]]
+                     (N=10, E=20, error_ratio=0, confer=linear, dist=normal, alpha=10)
+                     confer: abs/binary/linear/sigmoid
+                     dist: uniform/normal/exponential
+	         lattice: [dim [n [is_torus]]] (dim=2, n=5, is_torus=False)
+	         voronoi: [npoints [width [height]]] (npoints=10, width=1, height=1)
+                 degree_bounded/db: [N [E]] (N=10, E=20)
+                 configuration [degree_seq] (degree_seq=6,5,4,3,3,3,2,2,1,1)
+                 regular: [N [k]] (N=10, k=3)
+                 li_maini: [T [M [m0 [m [alpha [n]]]]]] (T=200, M=4, m0=4, m=1, alpha=.1, n=1)
   -s seed    specify random number seed
   -o format  output graph format ({export_fmts})
 """)
