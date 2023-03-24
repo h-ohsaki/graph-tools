@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 # Tools for graph theory and network science with many generation models.
-# Copyright (c) 2018-2019, Hiroyuki Ohsaki.
+# Copyright (c) 2018-2023, Hiroyuki Ohsaki.
 # All rights reserved.
 #
 
@@ -22,28 +22,34 @@
 # Ryo Nakamura <r-nakamura[atmark]kwansei.ac.jp>
 # Yuichi Yasuda <yuichi[atmark]kwansei.ac.jp>
 
-from collections import deque
+from collections import deque, defaultdict
 import functools
 import itertools
 import math
 import random
 import re
 import time
+import statistics
 
 from perlcompat import warn, die
 import numpy
 import pytess
+import tbdump
+
+VERSION = 1.6
 
 CREATE_SUBP = {
     'random': 'create_random_graph',
     'random_sparse': 'create_random_sparse_graph',
+    'erdos_renyi': 'create_erdos_renyi_graph',
+    'er': 'create_erdos_renyi_graph',
     'barabasi': 'create_barabasi_graph',
     'ba': 'create_barabasi_graph',
     'barandom': 'create_barabasi_random_graph',
-    'general_ba': 'create_generalized_barabasi_graph',
     'ring': 'create_ring_graph',
     'tree': 'create_tree_graph',
     'btree': 'create_btree_graph',
+    'general_ba': 'create_generalized_barabasi_graph',
     'latent': 'create_latent_graph',
     'treeba': 'create_treeba_graph',
     'lattice': 'create_lattice_graph',
@@ -51,6 +57,7 @@ CREATE_SUBP = {
     'db': 'create_degree_bounded_graph',
     'degree_bounded': 'create_degree_bounded_graph',
     'configuration': 'create_configuration_graph',
+    'regular': 'create_random_regular_graph',
     'li_maini': 'create_li_maini_graph',
 }
 CREATE_TYPES = sorted(CREATE_SUBP.keys())
@@ -70,13 +77,13 @@ MAX_RETRIES = 100
 
 class Graph:
     def __init__(self, directed=True, multiedged=True):
-        self.G = {}  # graph attributes
-        self.V = {}  # vertices
-        self.EI = {}  # incoming edges
-        self.EO = {}  # outgoin edges
-        self.T = {}  # shortest path cache (total distances from vertex)
-        self.P = {}  # shortest path cache (preceeding vertices list)
-        self.Cb = {}  # betweenness centrality cache (per vertex)
+        self.G = {}  # Graph attributes.
+        self.V = {}  # Vertices.
+        self.EI = {}  # Incoming edges.
+        self.EO = {}  # Outgoing edges.
+        self.T = {}  # Shortest path cache (total distances from vertex).
+        self.P = {}  # Shortest path cache (preceeding vertices list).
+        self.Cb = {}  # Betweenness centrality cache (per vertex).
         self._directed = directed
 
     def __repr__(self):
@@ -113,19 +120,45 @@ class Graph:
         the attribute does not exist."""
         return self.G.get(attr, None)
 
+    def degrees(self):
+        """Return an (unsorted) list of vertex degrees."""
+        return [self.degree(v) for v in self.vertices()]
+
     def average_degree(self):
         """Return the average degree of all vertices in the graph."""
-        degrees = [self.degree(v) for v in self.vertices()]
+        degrees = self.degrees()
         if degrees:
-            return sum(degrees) / len(degrees)
+            return statistics.mean(degrees)
         else:
             return 0
+
+    def clustering_coefficient(self):
+        ratios = []
+        for v in self.vertices():
+            degree = self.degree(v)
+            if degree < 2:
+                continue
+            # Count number of opposite edges.
+            m = 0
+            for u, w in itertools.combinations(self.neighbors(v), 2):
+                if self.has_edge(u, w) or self.has_edge(w, u):
+                    m += 1
+            ratios.append(m / ((degree * (degree - 1)) / 2))
+        return statistics.mean(ratios)
+
+    def average_path_length(self):
+        self.floyd_warshall()
+        lengths = []
+        for u, v in itertools.permutations(self.vertices(), 2):
+            if self.is_reachable(u, v):
+                lengths.append(self.T[u][v])
+        return statistics.mean(lengths)
 
     # vertex ----------------------------------------------------------------
     def vertices(self):
         """Return all vertices in the graph as a list."""
         # FIXME: should implement as a generator
-        return list(self.V.keys())
+        return self.V.keys()
 
     def has_vertex(self, v):
         """Check if vertex V exists in the graph."""
@@ -137,7 +170,7 @@ class Graph:
     def add_vertex(self, v):
         """Attach vertex V to the graph if it does not exist."""
         if not self.has_vertex(v):
-            self.V[v] = {}  # default vertex attribute
+            self.V[v] = {}  # Default vertex attribute.
 
     def add_vertices(self, *vertices):
         """Attach vertices VERTICES to the graph while avoiding duplicates."""
@@ -153,7 +186,7 @@ class Graph:
         # FIXME: should implement as a generator
         if not self.EI.get(v, None):
             return []
-        return list(self.EI[v].keys())
+        return self.EI[v].keys()
 
     def successors(self, u, ignore=False):
         """Return the list of successor vertices of vetex V.  This method
@@ -161,10 +194,10 @@ class Graph:
         IGNORE is true."""
         if not ignore:
             self.expect_directed()
-        # FIXME: should implement as a generator
+        # FIXME: Should implement as a generator.
         if not self.EO.get(u, None):
             return []
-        return list(self.EO[u].keys())
+        return self.EO[u].keys()
 
     def neighbors(self, v):
         """Return all neighbor nodes of vetex V."""
@@ -173,12 +206,12 @@ class Graph:
             found.add(u)
         for u in self.successors(v, ignore=True):
             found.add(u)
-        return list(found)
+        return found
 
     def set_vertex_attribute(self, v, attr, val):
         """Define the vertex attribute of vetex V named ATTR as value VAL."""
         if not self.has_vertex(v):
-            die('set_vertex_attribute: no vertex {}'.format(v))
+            die(f'set_vertex_attribute: no vertex {v}')
         self.V[v][attr] = val
 
     def get_vertex_attribute(self, v, attr):
@@ -235,7 +268,7 @@ class Graph:
 
     def random_vertex(self):
         """Randomly choose a vertex from all vertices."""
-        return random.choice(self.vertices())
+        return random.choice(list(self.vertices()))
 
     # edge ----------------------------------------------------------------
     def edges(self):
@@ -275,7 +308,7 @@ class Graph:
             u, v = v, u
         if not self.has_edge(u, v):
             return []
-        return list(self.EO[u][v].keys())
+        return self.EO[u][v].keys()
 
     def get_edge_count(self, u, v):
         """Return the number of multi-edges connecting vertices U and V."""
@@ -387,8 +420,7 @@ class Graph:
         if self.undirected() and u > v:
             u, v = v, u
         if not self.has_edge(u, v):
-            die('set_edge_attribute_by_id: edge ({}, {}) not found'.format(
-                u, v))
+            die(f'set_edge_attribute_by_id: edge ({u}, {v}) not found')
         self.EO[u][v].setdefault(n, {})
         self.EO[u][v][n][attr] = val
 
@@ -400,8 +432,7 @@ class Graph:
         if self.undirected() and u > v:
             u, v = v, u
         if not self.has_edge(u, v):
-            die('get_edge_attribute_by_id: edge ({}, {}) not found'.format(
-                u, v))
+            die(f'get_edge_attribute_by_id: edge ({u}, {v}) not found')
         return self.EO[u][v][n].get(attr, None)
 
     def set_edge_attributes_by_id(self, u, v, n, adict):
@@ -466,14 +497,14 @@ class Graph:
                 break
             S.append(u)
             for v in self.successors(u):
-                # FIXME: must reject multi-edged graph
+                # FIXME: Must reject multi-edged graph.
                 w = self.get_edge_weight_by_id(u, v, 0) or 1
                 if dist.get(v, None) is None or dist[v] > (
                         dist.get(u, INFINITY) + w):
                     dist[v] = dist[u] + w
                     prev[v] = [u]
                 elif dist[v] == (dist.get(u, INFINITY) +
-                                 w):  # handle equal paths
+                                 w):  # Handle equal paths.
                     prev[v].append(u)
         self.T[s] = dist
         self.P[s] = prev
@@ -496,10 +527,10 @@ class Graph:
                         yield path + [t]
 
         self.expect_directed()
-        # build shortest-path tree if not cached yet
+        # Build shortest-path tree if not cached yet.
         if not s in self.P:
             self.dijkstra(s)
-        return list(find_path(s, t))
+        return find_path(s, t)
 
     def dijkstra_all_pairs(self):
         """Compute all-pairs shortest paths using Dijkstra's algorithm."""
@@ -509,8 +540,7 @@ class Graph:
     def floyd_warshall(self):
         """Compute all-pairs shortest paths using Floyd-Warshall algorithm."""
         self.expect_directed()
-
-        # initialize weight matrix
+        # Initialize weight matrix.
         path = {}
         next_ = {}
         for v in self.vertices():
@@ -519,7 +549,7 @@ class Graph:
         for u, v in self.edges():
             path[u][v] = self.get_edge_weight_by_id(u, v, 0) or 1
 
-        # run Floyd-Warshall algorithm to find all-pairs shortest paths
+        # Run Floyd-Warshall algorithm to find all-pairs shortest paths.
         INFINITY = 2 << 30
         for k in self.vertices():
             for u in self.vertices():
@@ -547,7 +577,7 @@ class Graph:
             for v in self.neighbors(u):
                 if v not in explored:
                     need_visit.add(v)
-        return list(explored)
+        return explored
 
     def is_connected(self):
         """Check if all vertices in the graph are mutually connected."""
@@ -559,14 +589,14 @@ class Graph:
         """Return all components (i.e., connected subgraphs) of the graph.
         Components are returned as list of vertices set."""
         components = []
-        # record unvisisted vertices
+        # Record unvisisted vertices.
         unvisited = set(self.vertices())
         while unvisited:
-            # start exploration from one of unvisited vertices
+            # Start exploration from one of unvisited vertices.
             v = unvisited.pop()
             explored = self.explore(v)
             components.append(explored)
-            # remove all visisted vertices
+            # Remove all visisted vertices.
             unvisited -= set(explored)
         return components
 
@@ -583,42 +613,41 @@ class Graph:
         of Mathematical Sociology, 2001."""
         def _update_betweenness():
             self.expect_undirected()
-
-            # check if the graph is unweighted
+            # Check if the graph is unweighted.
             for _ in range(10):  # test 10 sample edges
                 u, v = self.random_edge()
                 w = self.get_edge_weight(u, v)
                 if w is not None and w != 1:
                     die('only supports unweighted graphs.')
 
-            # betweenness centrality for vertices
+            # Betweenness centrality for vertices.
             self.Cb = {v: 0 for v in self.vertices()}
 
             for s in self.vertices():
-                S = []  # empty stack
+                S = []  # Empty stack.
                 P = {w: [] for w in self.vertices()}
                 sigma = {t: 0 for t in self.vertices()}
                 sigma[s] = 1
                 d = {t: -1 for t in self.vertices()}
                 d[s] = 1
-                Q = deque()  # empty queue
+                Q = deque()  # Empty queue.
                 Q.append(s)
 
                 while Q:
                     v = Q.popleft()
                     S.append(v)
                     for w in self.neighbors(v):
-                        # found for the first time?
+                        # Found for the first time?
                         if d[w] < 0:
                             Q.append(w)
                             d[w] = d[v] + 1
-                        # shortest path to w via v?
+                        # Shortest path to w via v?
                         if d[w] == d[v] + 1:
                             sigma[w] += sigma[v]
                             P[w].append(v)
 
                 delta = {v: 0 for v in self.vertices()}
-                # S returns vertices in order of non-increasing distance from s
+                # S returns vertices in order of non-increasing distance from s.
                 while S:
                     w = S.pop()
                     for v in P[w]:
@@ -636,7 +665,7 @@ class Graph:
         if directed is None:
             directed = self.directed()
         T = Graph(directed)
-        # FIXME: preserve graph attributes
+        # FIXME: Preserve graph attributes.
         for v in self.vertices():
             T.add_vertex(v)
             T.set_vertex_attributes(v, self.get_vertex_attributes(v))
@@ -661,13 +690,14 @@ class Graph:
         """Add edges to all vertex pairs to make the graph fully-meshed."""
         for u in self.vertices():
             for v in self.vertices():
-                # FIXME: works for directed/undirected graphs?
+                # FIXME: Works for directed/undirected graphs?
                 if u >= v:
                     continue
                 if not self.has_edge(u, v):
                     self.add_edge(u, v)
         return self
 
+    # spectral measures ----------------------------------------------------------------
     def adjacency_matrix(self):
         """Return the adjacency matrix of the graph as NumPy.ndarray
         object."""
@@ -725,7 +755,6 @@ class Graph:
         """Return the effective resistance from spectral graph theory."""
         N = len(self.vertices())
         mu = self.laplacian_matrix_eigvals()
-        print(mu)
         return N * sum([1 / (mu + 1e-100) for mu in mu[1:]])
 
     def spanning_tree_count(self):
@@ -741,34 +770,32 @@ class Graph:
         atype = 'directed' if self.is_directed() else 'undirected'
         vcount = len(self.vertices())
         ecount = len(self.edges())
-        astr = """{}Generated by graph-tools (version 1.0) at {}
-{}{}, {} vertices, {} edges
-""".format(comment, date, comment, atype, vcount, ecount)
+        astr = f"{comment}Generated by graph-tools (version {VERSION}) at {date}]\n{comment}{atype}, {vcount} vertices, {ecount} edges\n"
         return astr
 
     # create ----------------------------------------------------------------
-    def create_graph(self, atype, *args):
+    def create_graph(self, atype, *args, **kwargs):
         name = CREATE_SUBP.get(atype, None)
         if not name:
-            warn(
-                "create_graph: no graph creation support for type '{}'".format(
-                    atype))
+            warn(f"create_graph: no graph creation support for type '{atype}'")
             return None
         method = getattr(self, name, None)
         if not method:
-            warn("create_graph: graph creation method '{name}' not found".
-                 format(name))
+            warn(f"create_graph: graph creation method '{name}' not found")
             return None
-        return method(*args)
+        return method(*args, **kwargs)
 
     def create_random_graph(self, N=10, E=20, no_multiedge=False):
+        """Create an instance of *connected* random graphs with N vertices and
+        E edges.  A generated graph might be multiedged.  You can specify
+        NO_MULTIEDGE to force a single-edged graph."""
         if E < N:
             die('create_random_graph: too small number of edges')
 
         for v in range(1, N + 1):
             self.add_vertex(v)
 
-        # add first (N - 1) edges for making sure connectivity
+        # Add first (N - 1) edges for making sure connectivity.
         for i in range(1, N):
             u = i + 1
             v = random.randrange(1, u)
@@ -777,9 +804,9 @@ class Graph:
             else:
                 self.add_edge(v, u)
 
-        # randomly add remaining (E - (N - 1)) edges
+        # Randomly add remaining (E - (N - 1)) edges.
         for i in range(1, E - (N - 1) + 1):
-            # FIXME: avoid cycle edges, but this may take log time
+            # FIXME: Avoid cycle edges, but this may take log time.
             ntries = 1
             while ntries < MAX_RETRIES:
                 u = random.randrange(1, N + 1)
@@ -791,83 +818,89 @@ class Graph:
             self.add_edge(u, v)
         return self
 
-    def create_erdos_renyi_graph(self, N=100, p=.04):
-        self.expect_undirected()
+    def create_random_sparse_graph(self, N=10, E=20, no_multiedge=False):
+        """Create a random graph with N vertices and E edges.  A generated
+        graph might be multiedged."""
+        for i in range(1, N + 1):
+            self.add_vertex(i)
+
+        # Randomly add remaining Eedges.
+        for i in range(1, E + 1):
+            # FIXME: Avoid cycle edges, but this may take log time.
+            ntries = 1
+            while ntries < MAX_RETRIES:
+                u = random.randrange(1, N + 1)
+                v = random.randrange(1, N + 1)
+                if not no_multiedge and u != v:
+                    break
+                if no_multiedge and u != v and not self.has_edge(u, v):
+                    break
+            self.add_edge(u, v)
+        return self
+
+    def create_erdos_renyi_graph(self, N=10, p=.5):
+        """Create a random graph using the Erdos-Renyi model."""
         self.add_vertices(*range(1, N + 1))
         for u, v in itertools.combinations(self.vertices(), 2):
             if random.random() < p:
                 self.add_edge(u, v)
         return self
 
-    def create_random_sparse_graph(self, N=10, E=20, no_multiedge=False):
-        for i in range(1, N + 1):
-            self.add_vertex(i)
-
-        # randomly add remaining Eedges
-        for i in range(1, E + 1):
-            # FIXME: avoid cycle edges, but this may take log time
-            ntries = 1
-            while ntries < MAX_RETRIES:
-                u = random.randrange(1, N + 1)
-                v = random.randrange(1, N + 1)
-                if not no_multiedge and u != v:
-                    break
-                if no_multiedge and u != v and not self.has_edge(u, v):
-                    break
-            self.add_edge(u, v)
-        return self
-
     def create_barabasi_graph(self, N=10, m0=2, m=2):
+        """Create a scale-free graph using the BA (Barabasi Albert) model."""
         self.expect_undirected()
-
+        # Create complete graph with m0 vertices.
         for v in range(1, m0 + 1):
             self.add_vertex(v)
         self = self.complete_graph()
 
-        # create complete graph with m0 vertices
-
         step = N - m0
-        for _ in range(1, step + 1):
-            # add a new vertex with m edges
-            u = m0 + _
+        for k in range(1, step + 1):
+            # Add a new vertex with m edges.
+            u = m0 + k
             self.add_vertex(u)
 
-            # attach to a vertex using preferential attachment
+            # Attach to a vertex using preferential attachment.
             edges = self.edges()
             for i in range(1, m + 1):
-                # NOTE: degree-preferential attachment is realized by
+                # NOTE: Degree-preferential attachment is realized by
                 # selecting a vertex connected to a randomly-chosen edge.
                 edge = random.choice(edges)
-                v = edge[random.randrange(0, 2)]
+                v = random.choice(edge)
                 self.add_edge(u, v)
         return self
 
     def create_barabasi_random_graph(self, N=10, E=20, m0=2):
+        """Create a scal-free graph using the randomized BA model.  The
+        randomized BA model is a generalization of the original BA model; The
+        number edges added at every preferential-attachment phase is given by
+        a random number rather than a constant parameter m.  This enables
+        generation of BA-model-like scale-free graphs with an arbitrary
+        average degree."""
         self.expect_undirected()
-
-        # create complete graph with m0 vertices
+        # Create complete graph with m0 vertices.
         for v in range(1, m0 + 1):
             self.add_vertex(v)
         self = self.complete_graph()
 
-        # calcurate number of edges to be connected per vertex
+        # Calcurate number of edges to be connected per vertex.
         E0 = m0 * (m0 - 1) / 2
         nedges = (E - E0) / (N - m0)
 
-        # add remaining (N - m0) vertices
+        # Add remaining (N - m0) vertices.
         for u in range(m0 + 1, N + 1):
             self.add_vertex(u)
 
-            # attach to a vertex using preferential attachment
-            # NOTE: degree-preferential attachment is realized by
+            # Attach to a vertex using preferential attachment.
+            # NOTE: Degree-preferential attachment is realized by
             # selecting a vertex connected to a randomly-chosen edge.
             edges = self.edges()
             while True:
                 edge = random.choice(edges)
-                v = edge[random.randrange(0, 2)]
+                v = random.choice(edge)
                 self.add_edge(u, v)
 
-                # NOTE: using the fact that the average number of
+                # NOTE: Using the fact that the average number of
                 # successes of infinite Bernoulli traials with probability
                 # p is given by 1/p.
                 if random.uniform(0, 1) <= 1 / nedges:
@@ -875,29 +908,30 @@ class Graph:
         return self
 
     def create_ring_graph(self, N=10, step=1):
+        """Create a ring graph with N vertices.  Every edge is connected
+        between vertices whose identifiers are STEP-th apart; e.g., when STEP
+        is k, vertex i is connected with vertex (i - k) and (i + k)."""
         for v in range(1, N + 1):
             self.add_vertex(v)
-
-        # add (N - 1) edges for making circular topology
+        # Add (N - 1) edges for making circular topology.
         for _ in range(0, N):
             u = _ + 1
             v = ((_ + step) % N) + 1
             self.add_edge(u, v)
-
         return self
 
     def create_tree_graph(self, N=10):
+        """Create a random tree graph with N vertices."""
         self.add_vertex(1)
-
-        # add (N - 1) edges for _ in making tree topology:
+        # Add (N - 1) edges for _ in making tree topology.
         for v in range(2, N + 1):
-            u = random.randrange(1, v)
+            u = self.random_vertex()
             self.add_edge(u, v)
-
         return self
 
-    # binary tree graph
+    # Binary tree graph.
     def create_btree_graph(self, N=10):
+        """Create a balanced binay tree grph with N vertices."""
         depth = 0
         nedges = 1
         finished = False
@@ -909,6 +943,8 @@ class Graph:
                 if (parent == 0):
                     continue
                 self.add_edge(v, parent)
+                # Record the depth of the vertex from the root.
+                # FIXME: This code can be removed?
                 self.set_vertex_attribute(v, 'latent', 1 / depth)
                 nedges += 1
                 if nedges >= N:
@@ -917,68 +953,63 @@ class Graph:
             depth += 1
         return self
 
-    # tree BA graph
+    # Tree BA graph.
     def create_treeba_graph(self, N=10, alpha=1):
         self.expect_directed()
-        attract = []
+        attract = [0] * N
+        # Create an initial vertex.
+        v = 1
+        self.add_vertex(v)
+        attract[v - 1] = alpha + len(self.in_edges(v))
 
-        # create an initial vertex
-        self.add_vertex(1)
-        attract[1] = alpha + self.in_edges(1)
-
-        # create a vertex and attach to another using preferential attachment
+        # Create a vertex and attach to another using preferential attachment.
         for u in range(2, N + 1):
-
-            # randomly choose a vertex with a probability proportional to attract
-            total = 0
-            for _ in attract:
-                total += _ or 0
-            frac = random.uniform(0, total)
-            sum = 0
-            for v in range(1, N):
-                sum += attract[v]
-                if frac < sum:
+            # Randomly choose a vertex with a probability proportional to attract.
+            total = sum(attract)
+            chosen = random.uniform(0, total)
+            accum = 0
+            for v in range(1, N + 1):
+                accum += attract[v - 1]
+                if chosen < accum:
                     self.add_edge(u, v)
-                    attract[u] = alpha + self.in_edges(u)
-                    attract[v] = alpha + self.in_edges(v)
+                    attract[u - 1] = alpha + len(self.in_edges(u))
+                    attract[v - 1] = alpha + len(self.in_edges(v))
                     break
         return self
 
-    # Generalized BA model proposed in S. N. Dorogovtsev, ``Structure of
-    # growing networks with preferential linking,'' Phisical Review
-    # Letters, vol. 85, no. 21, pp. 4633 -= 14636, Nov. 2000.
-    def create_generalized_barabasi_graph(self, N=10, m0=2, m=2, gamma=3):
-        self.expect_directed()
+    def create_generalized_barabasi_graph(self, N=10, m=2, gamma=3, m0=2):
+        """Create a scale-free graph using the generalized BA model proposed
+        in S. N. Dorogovtsev, ``Structure of growing networks with
+        preferential linking,'' Phisical Review Letters, vol. 85, no. 21,
+        pp. 4633-14636, Nov. 2000."""
         A = m * (gamma - 2)
-
-        # create complete graph with m0 vertices
-        self.add_vertices([v for v in range(1, m0 + 1)])
+        # Create complete graph with m0 vertices.
+        self.add_vertices(*range(1, m0 + 1))
         self = self.complete_graph()
 
         step = N - m0
-        for _ in range(1, step + 1):
-            # add a new vertex with m edges
-            u = m0 + _
+        for i in range(1, step + 1):
+            # Add a new vertex with m edges.
+            u = m0 + i
             self.add_vertex(u)
 
-            # attach to a vertex using preferential attachment
-            vcount = self.vertices() - 1
-            ecount = self.edges()
-            for _ in range(1, m + 1):
-                # NOTE: preferential-attachement with probability A + in_degree
+            # Attach to a vertex using preferential attachment.
+            vcount = len(self.vertices()) - 1
+            ecount = len(self.edges())
+            for j in range(1, m + 1):
+                # NOTE: Preferential-attachement with probability A + in_degree.
                 total = A * vcount + ecount
-                thresh = random.uniform(0, total)
-                sum = 0
+                chosen = random.uniform(0, total)
+                accum = 0
                 for v in range(1, u):
-                    sum += A + self.in_degree(v)
-                    if sum >= thresh:
-                        # make sure newly added node has at least single link
-                        if _ == 1:
+                    accum += A + self.in_degree(v)
+                    if chosen < accum:
+                        # Make sure newly added node has at least single link.
+                        if j == 1:
                             self.add_edge(u, v)
                         else:
                             self.add_edge(random.randrange(1, u + 1), v)
                         break
-
         return self
 
     def create_latent_graph(self,
@@ -988,28 +1019,33 @@ class Graph:
                             confer='linear',
                             dist='normal',
                             alpha=10):
-        # assign latent variables
-        alist = []
+        # Add N vertices.
+        self.add_vertices(*range(1, N + 1))
+        # Assign latent variables to all vertices.
         if dist == 'uniform':
-            alist = [random.uniform(0, 1) for _ in range(N)]
-        if dist == 'normal':
-            alist = [random.normalvariate(1 / 2, 1 / 6) for _ in range(N)]
-        if dist == 'exponential':
-            alist = [random.expovariate(1 / 3) for _ in range(N)]
-
+            alist = [random.uniform(0, 1) for v in self.vertices()]
+        elif dist == 'normal':
+            alist = [
+                random.normalvariate(1 / 2, 1 / 6) for v in self.vertices()
+            ]
+        elif dist == 'exponential':
+            alist = [random.expovariate(1 / 3) for v in self.vertices()]
+        else:
+            die('invalid latent variable distribution {dist}.')
         alist = sorted(alist)
-        for _ in range(1, N + 1):
-            self.set_vertex_attribute(_, 'latent', alist[_ - 1])
+        for v in self.vertices():
+            self.set_vertex_attribute(v, 'latent', alist[v - 1])
 
         nedges = 0
         while nedges < E * (1 - error_ratio):
-            u = random.randrange(1, N + 1)
-            v = random.randrange(1, N + 1)
+            u = self.random_vertex()
+            v = self.random_vertex()
             if u == v:
                 continue
+            # Calcurate the connecting probability between vertices U and V.
             lu = self.get_vertex_attribute(u, 'latent')
             lv = self.get_vertex_attribute(v, 'latent')
-            prob = 1.0
+            prob = 1.
             if confer == 'abs':
                 prob = lv
             elif confer == 'binary':
@@ -1022,24 +1058,26 @@ class Graph:
                     prob = 0
             elif confer == 'sigmoid':
                 prob = 1 / (1 + math.exp(-alpha * (lv - lu)))
+            # Probabilistically connect two vertices.
+            if random.random() <= prob:
+                self.add_edge(u, v)
+                nedges += 1
 
-            if not random.uniform(0, 1) <= prob:
-                continue
-            self.add_edge(u, v)
-            nedges += 1
-
-        ## add disturbance
+        # Add disturbance; a fraction of edges are added randomly.
         while nedges < E:
-            u = random.randrange(1, N + 1)
-            v = random.randrange(1, N + 1)
+            u = self.random_vertex()
+            v = self.random_vertex()
             if u == v:
                 continue
             self.add_edge(u, v)
             nedges += 1
-
         return self
 
     def _lattice_vertex(self, dim, n, *positions):
+        """Return the vertex located at *POSITIONS in DIM-dimensional lattice
+        with N vetices per side.  For instance, the top-right corner (1, 5) in
+        5x5 lattice is vertex 5, and the bottom-left corner (5, 1) in 5x5
+        lattice is vertex 21."""
         v = 0
         for i in positions:
             v *= n
@@ -1051,24 +1089,28 @@ class Graph:
         return v + 1
 
     def create_lattice_graph(self, dim=2, n=5, is_torus=False):
+        """Create a DIM-dimensional lattice graph with N vertices per side.
+        The graph has N^DIM vertices in total.  If IS_TORUS is specified, all
+        oppsosite ends are connected."""
         if dim == 1:
-            for i in range(1, n + 1):
-                u = self._lattice_vertex(dim, n, i)
-                v = self._lattice_vertex(dim, n, i + 1)
-                if is_torus or v > u:
+            for col in range(1, n + 1):
+                u = self._lattice_vertex(dim, n, col)
+                v = self._lattice_vertex(dim, n, col + 1)
+                # Connect with the next right vertex.
+                if u < v or is_torus:
                     self.add_edge(u, v)
-
         elif dim == 2:
-            for j in range(1, n + 1):
-                for i in range(1, n + 1):
-                    u = self._lattice_vertex(dim, n, i, j)
-                    v = self._lattice_vertex(dim, n, i + 1, j)
-                    if is_torus or v > u:
+            for row in range(1, n + 1):
+                for col in range(1, n + 1):
+                    u = self._lattice_vertex(dim, n, row, col)
+                    # Connect with the next lower vertex.
+                    v = self._lattice_vertex(dim, n, row + 1, col)
+                    if u < v or is_torus:
                         self.add_edge(u, v)
-                    v = self._lattice_vertex(dim, n, i, j + 1)
-                    if is_torus or v > u:
+                    # Connect with the next right vertex.
+                    v = self._lattice_vertex(dim, n, row, col + 1)
+                    if u < v or is_torus:
                         self.add_edge(u, v)
-
         return self
 
     def create_voronoi_graph(self, npoints=10, width=1, height=1):
@@ -1086,7 +1128,7 @@ class Graph:
             for pnt in voronoi_pnts:
                 self.add_vertex(vmap[pnt])
                 x, y = pnt
-                # FIXME: quick hack to pack within WIDTH x HEIGHT field
+                # FIXME: Quick hack to pack within WIDTH x HEIGHT field.
                 x = max(min(x, width), 0)
                 y = max(min(y, height), 0)
                 self.set_vertex_attribute(vmap[pnt], 'pos', f"{x},{y}")
@@ -1100,25 +1142,23 @@ class Graph:
         edges.  For details of the algorithm, refer to K. Yamashita et al.,
         `Revisiting the Robustness of Complex Networks against Random Node
         Removal,' Journal of Information Processing, 2019."""
-        self.expect_undirected()
-        k = 2 * E / N  # average degree
-        kmin = int(k / 2)  # minimum degree
+        k = 2 * E / N  # Average degree.
+        kmin = int(k / 2)  # Minimum degree.
         if k != kmin * 2:
-            die(f"Average degree {k} must be multiple of 2")
+            die(f"Average degree {k} must be multiple of 2.")
 
-        # initially add N vertices
+        # Initially add N vertices.
         self.add_vertices(*range(1, N + 1))
 
         for u in self.vertices():
-            # randomly connect with other KMIN vertices to make sure that the
+            # Randomly connect with other KMIN vertices to make sure that the
             # minimum degree is no less than KMIN.
-            V = self.vertices()
-            V.remove(u)
+            vlist = list(self.vertices())
+            vlist.remove(u)
             for _ in range(kmin):
-                v = random.choice(V)
+                v = random.choice(vlist)
                 self.add_edge(u, v)
-                V.remove(v)
-
+                vlist.remove(v)
         return self
 
     def create_configuration_graph(self, degree_seq=None):
@@ -1129,7 +1169,7 @@ class Graph:
             self.__init__(directed=False)
             self.add_vertices(*range(1, N + 1))
 
-            # randomly connect two stubs while prohibiting self-loops and multi-edges.
+            # Randomly connect two stubs while prohibiting self-loops and multi-edges.
             stubs = stubs_.copy()
             random.shuffle(stubs)
             while stubs:
@@ -1141,7 +1181,7 @@ class Graph:
                         self.add_edge(u, v)
                         break
                     else:
-                        # FIXME: rewrite with deque for better efficiency
+                        # FIXME: Rewrite with deque for better efficiency.
                         stubs = [v] + stubs
                         ntries += 1
                         if ntries > len(stubs):
@@ -1149,21 +1189,21 @@ class Graph:
             return True
 
         if degree_seq is None:
-            degree_seq = [4, 3, 3, 2, 1, 1, 1]
+            degree_seq = [6, 5, 4, 3, 3, 3, 2, 2, 1, 1]
         self.expect_undirected()
 
-        # first, allocate stubs (i.e., connectors) for every vertex.  If the degree
+        # First, allocate stubs (i.e., connectors) for every vertex.  If the degree
         # of vertex v is k, STUB has the number k of v's; e.g., if the degree of vertex
         # 4 is 3, STUB contains three 4's.
         stubs = []
         for i, k in enumerate(degree_seq):
             stubs += [i + 1] * k
         if len(stubs) % 2:
-            die(f'Total degree must be even.')
+            die('Total degree must be even.')
 
         N = len(degree_seq)
-        # loop until a realization is obtained
-        # FIXME: this code might loop indetinitely
+        # Loop until a realization is obtained.
+        # FIXME: This code might loop indetinitely.
         while True:
             if _connect_randomly(N, stubs):
                 break
@@ -1188,13 +1228,13 @@ class Graph:
         self.expect_undirected()
 
         vmax = 0
-        # community of a vertex
+        # Community of a vertex.
         community_of = {}
-        # vertices in a community
+        # Vertices in a community.
         vertices_in = [[] for _ in range(M)]
-        # the number of links of a vertex closed within its community
+        # The number of links of a vertex closed within its community.
         inner_degree = {}
-        # the number of links of a vertex connected with other communities
+        # The number of links of a vertex connected with other communities.
         inter_degree = {}
 
         def _create_vertex_in(c):
@@ -1220,34 +1260,34 @@ class Graph:
                 inter_degree[u] += 1
                 inter_degree[v] += 1
 
-        # 1. initialization
-        # start from a small number m0 of fully connected nodes in each
-        # community
+        # 1. Initialization
+        # Start from a small number m0 of fully connected nodes in each
+        # community.
         for c in range(M):
             for _ in range(m0):
                 v = _create_vertex_in(c)
             for u, v in itertools.combinations(vertices_in[c], 2):
                 _add_edge(u, v)
 
-        # use M(M-1)/2 inter-community links to connect each community to the
-        # other M-1 communities
+        # Use M(M-1)/2 inter-community links to connect each community to the
+        # other M-1 communities.
         for c1, c2 in itertools.combinations(range(M), 2):
-            # the nodes that the inter-community links connected to are
-            # selected randomly in each community
+            # The nodes that the inter-community links connected to are
+            # selected randomly in each community.
             u, v = random.choice(vertices_in[c1]), random.choice(
                 vertices_in[c2])
             _add_edge(u, v)
 
-        # 2. growth
+        # 2. Growth
         for t in range(T):
-            # at each time step, a new node is added to a randomly selected
-            # community
+            # At each time step, a new node is added to a randomly selected
+            # community.
             c = random.randrange(M)
             u = _create_vertex_in(c)
 
-            # 3. preferential attachments
-            # the new node will be connected to m nodes in the same community
-            # through m inner-community links
+            # 3. Preferential attachments
+            # The new node will be connected to m nodes in the same community
+            # through m inner-community links.
             degrees = [inner_degree[v] for v in vertices_in[c]]
             total = sum(degrees)
             prob = [d / total for d in degrees]
@@ -1257,9 +1297,9 @@ class Graph:
                                          p=prob):
                 _add_edge(u, v)
 
-            # with probability alpha connected to n nodes (none with
+            # With probability alpha connected to n nodes (none with
             # probability 1 - alpha) in the other M - 1 communities through
-            # inter-community links
+            # inter-community links.
             if random.random() <= alpha:
                 vertices = []
                 degrees = []
@@ -1282,20 +1322,19 @@ class Graph:
         name = IMPORT_SUBP.get(fmt, None)
         method = getattr(self, name, None)
         if not name or not method:
-            die("import_graph: no import support for graph format '{fmt}'".
-                format(fmt))
+            die(f"import_graph: no import support for graph format '{fmt}'")
         return method(*args)
 
     def import_dot(self, lines):
         buf = ''
         for line in lines:
-            # remove C++-style comment
+            # Remove C++-style comment.
             pos = line.find('//')
             if pos >= 0:
                 line = line[pos:]
             line = line.strip()
             buf += line
-        # remove C-style comment
+        # Remove C-style comment.
         buf = re.sub(r'/\*.*?\*/', '', buf)
         m = re.search(r'graph\s+(\S+)\s*{(.*)}', buf)
         if not m:
@@ -1305,10 +1344,10 @@ class Graph:
 
     def _import_dot_body(self, body_str):
         def str2number(v):
-            # FIXME: shoud not check type
+            # FIXME: Shoud not check type.
             if type(v) != str:
                 return v
-            # remove preceeding/trailing spaces
+            # Remove preceeding/trailing spaces.
             v = v.strip()
             if v.startswith('0x'):
                 return int(v, 16)
@@ -1332,7 +1371,7 @@ class Graph:
             val, opts = m.group(1), m.group(3) or ''
             val = val.replace('\"', '')
 
-            # parse attributes [name1=val1,name2=val2...]
+            # Parse attributes [name1=val1,name2=val2...].
             attrs = {}
             for pair in opts.split(','):
                 if not pair:
@@ -1344,8 +1383,8 @@ class Graph:
                     aval = aval.replace('\"', '')
                 attrs[akey] = aval
 
-            # parse vertex/edge definition
-            # FIXME: this might be problematic...
+            # Parse vertex/edge definition.
+            # FIXME: This might be problematic...
             if '--' in val or '->' in val:  # vertex -- vertex [-- vertex...]
                 vertices = re.split(r'\s*-[->]\s*', val)
                 while len(vertices) >= 2:
@@ -1365,8 +1404,7 @@ class Graph:
         try:
             method = getattr(self, name, None)
         except TypeError:
-            die("export_graph: no export support for graph format '{fmt}'".
-                format(fmt))
+            die(f"export_graph: no export support for graph format '{fmt}'")
         return method(*args)
 
     def export_dot(self, *args):
@@ -1409,10 +1447,10 @@ class Graph:
 #define e_color blue
 """
         for v in sorted(self.vertices()):
-            out += 'define v{} ellipse v_size v_color\n'.format(v)
+            out += f'define v{v} ellipse v_size v_color\n'
         n = 1
         for u, v in sorted(self.edges()):
-            out += 'define e{} link v{} v{} e_width e_color\n'.format(n, u, v)
+            out += f'define e{n} link v{u} v{v} e_width e_color\n'
             n += 1
 
         out += 'spring /^v/\n'
@@ -1420,7 +1458,7 @@ class Graph:
         out += 'wait\n'
         return out
 
-    # aliases
+    # Aliases.
     is_directed = directed
     is_undirected = undirected
     is_multiedged = multiedged
