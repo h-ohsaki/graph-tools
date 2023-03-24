@@ -38,7 +38,6 @@ ok(g.betweenness(4) == 0)
 g = Graph(directed=False)
 g.add_vertices(1, 2, 3, 4)
 g.add_edge(1, 2)
-g.set_edge_weight(1, 2, .1)
 g.add_edge(1, 2) # multiedge
 g.add_edge(2, 3)
 g.add_edge(1, 3)
@@ -47,4 +46,3 @@ ok(g.betweenness(1) == 0)
 ok(g.betweenness(2) == 0)
 ok(g.betweenness(3) == 4)
 ok(g.betweenness(4) == 0)
-
