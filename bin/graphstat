@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+#
+# Generate a graph and dump in standard output.
+# Copyright (c) 2023, Hiroyuki Ohsaki.
+# All rights reserved.
+#
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# This program is contributed by Hal.
+
+import fileinput
+import os
+import statistics
+import sys
+
+from perlcompat import die, warn, getopts
+import graph_tools
+import tbdump
+
+STAT_TBL = {
+    'nodes': lambda g: len(g.vertices()),
+    'edges': lambda g: len(g.edges()),
+    'degree': lambda g: g.average_degree(),
+    'dstdev': lambda g: statistics.stdev(g.degrees()),
+    'dmin': lambda g: min(g.degrees()),
+    'dmax': lambda g: max(g.degrees()),
+    'direct': lambda g: g.is_directed(),
+    'connect': lambda g: g.is_connected(),
+    'clcoeff': lambda g: g.clustering_coefficient(),
+    'pathlen': lambda g: g.average_path_length(),
+    'maxcomp': lambda g: len(g.maximal_component()),
+}
+
+def usage():
+    prog = os.path.basename(sys.argv[0])
+    import_fmts = '/'.join(graph_tools.IMPORT_FORMATS)
+    types = '/'.join(STAT_TBL.keys())
+    die(f"""\
+usage: {prog} [-vdu] [-t type[,type]] [-i format] [file...]
+  -v              verbose mode
+  -d              directed graph (default)
+  -u              undirected graph
+  -t type[,type]  specify statistic to display ({types})
+  -i format  input graph format ({import_fmts})
+""")
+
+def format_number(n):
+    if n is None:
+        return 'NaN'
+    return f'{n:g}'
+
+def main():
+    opt = getopts('vduat:i:') or usage()
+
+    directed = True
+    if opt.u:
+        directed = False
+    if opt.a:
+        stat_types = sorted(STAT_TBL.keys())
+
+    stat_types = 'nodes edges degree dstdev dmin dmax direct connect clcoeff pathlen maxcomp'.split(
+    )
+    if opt.t:
+        stat_types = opt.t.split(',')
+
+    # Load graph.
+    g = graph_tools.Graph(directed=directed)
+    lines = []
+    for line in fileinput.input():
+        line = line.rstrip()
+        lines.append(line)
+    g.import_graph('dot', lines)
+
+    # Display statistics.
+    for atype in stat_types:
+        func = STAT_TBL.get(atype, None)
+        if not func:
+            print(f"Unsupported statistic `{atype}'")
+            exit(1)
+        v = func(g)
+        if v is None:
+            continue
+        if opt.v:
+            print(f'{atype}\t', end='')
+        print(format_number(v))
+
+if __name__ == "__main__":
+    main()
