@@ -5,4 +5,5 @@ from graph_tools import Graph
 
 g = Graph(directed=False)
 g.create_li_maini_graph()
-print(g)
+
+# FIX: write test cases
