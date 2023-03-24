@@ -497,7 +497,6 @@ class Graph:
         vertex in the shortest path from source vertex S to vertex 4.  You can
         obtain the shortest path to vertex V by traversing dictionary PREV
         from vertex V back to source node S."""
-        self.expect_undirected()
         # Distance from the source to other vertices.
         dist = {v: math.inf for v in self.vertices()}
         dist[s] = 0
@@ -509,7 +508,9 @@ class Graph:
         while queue:
             _, u = heapq.heappop(queue)
             visited[u] = True
-            for v in self.neighbors(u):
+            neighbors = self.neighbors(
+                u) if self.is_undirected() else self.successors(u)
+            for v in neighbors:
                 if v in visited:
                     continue
                 # FIXME: Must reject multi-edged graph.
@@ -563,28 +564,26 @@ class Graph:
     def floyd_warshall(self):
         """Compute all-pairs shortest paths using Floyd-Warshall algorithm."""
         # Initialize weight matrix.
-        path = {}
+        dist = {}
         next_ = {}
         for v in self.vertices():
-            path[v] = {}
+            dist[v] = defaultdict(lambda: math.inf)
             next_[v] = {}
+
         for u, v in self.edges():
             w = self.get_edge_weight_by_id(u, v, 0) or 1
-            path[u][v] = w
-            # if self.is_directed():
-            #     path[v][u] = w
+            dist[u][v] = w
+            if self.is_undirected():
+                dist[v][u] = w
 
         # Run Floyd-Warshall algorithm to find all-pairs shortest paths.
         for k in self.vertices():
             for u in self.vertices():
                 for v in self.vertices():
-                    w_uk = path[u].get(k, math.inf)
-                    w_kv = path[k].get(v, math.inf)
-                    w_uv = path[u].get(v, math.inf)
-                    if w_uk + w_kv < w_uv:
-                        path[u][v] = path[u][k] + path[k][v]
+                    if dist[u][k] + dist[k][v] < dist[u][v]:
+                        dist[u][v] = dist[u][k] + dist[k][v]
                         next_[u][v] = k
-        self.T = path
+        self.T = dist
 
     def is_reachable(self, u, v):
         """Check if any path exists from vertex U to vertex V."""
