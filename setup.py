@@ -7,7 +7,7 @@ with open('README.md', 'r') as fh:
 
 setuptools.setup(
     name="graph-tools",
-    version="1.5",
+    version="1.6",
     author="Hiroyuki Ohsaki",
     author_email="ohsaki@lsnl.jp",
     description=
@@ -16,8 +16,8 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/h-ohsaki/graph-tools",
     packages=setuptools.find_packages(),
-    install_requires=['numpy', 'perlcompat', 'pytess'],
-    scripts=['bin/graphgen'],
+    install_requires=['numpy', 'perlcompat', 'pytess', 'tbdump'],
+    scripts=['bin/graphgen', 'bin/graphstat'],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
