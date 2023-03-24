@@ -150,12 +150,9 @@ class Graph:
         return statistics.mean(ratios)
 
     def average_path_length(self):
-        if not self.T:
-            self.floyd_warshall()
         lengths = []
         for u, v in itertools.permutations(self.vertices(), 2):
-            if u in self.T and v in self.T[u]:
-                lengths.append(self.T[u][v])
+            lengths.append(self.shortest_path_length(u, v))
         return statistics.mean(lengths)
 
     # vertex ----------------------------------------------------------------
@@ -562,7 +559,6 @@ class Graph:
             path[u][v] = self.get_edge_weight_by_id(u, v, 0) or 1
 
         # Run Floyd-Warshall algorithm to find all-pairs shortest paths.
-        INFINITY = 2 << 30
         for k in self.vertices():
             for u in self.vertices():
                 for v in self.vertices():
@@ -590,7 +586,7 @@ class Graph:
                 if v not in explored:
                     need_visit.add(v)
         return explored
-
+            
     def is_connected(self):
         """Check if all vertices in the graph are mutually connected."""
         v = self.random_vertex()
