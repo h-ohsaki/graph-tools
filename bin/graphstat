@@ -25,6 +25,9 @@ import os
 import statistics
 import sys
 
+home_dir = os.getenv('HOME')
+sys.path.insert(1, f'{home_dir}/src/graph-tools')
+
 from perlcompat import die, warn, getopts
 import graph_tools
 import tbdump
@@ -40,7 +43,17 @@ STAT_TBL = {
     'connect': lambda g: g.is_connected(),
     'clcoeff': lambda g: g.clustering_coefficient(),
     'pathlen': lambda g: g.average_path_length(),
+    'eccentr': lambda g: statistics.mean(g.eccentricities()),
+    'radius': lambda g: min(g.eccentricities()),
+    'diametr': lambda g: max(g.eccentricities()),
+    'assortv': lambda g: g.assortativity(),
     'maxcomp': lambda g: len(g.maximal_component()),
+    'sp_rads': lambda g: g.spectral_radius(),
+    'sp_gap': lambda g: g.spectral_gap(),
+    'nat_con': lambda g: g.natural_connectivity(),
+    'alg_con': lambda g: g.algebraic_connectivity(),
+    'eff_res': lambda g: g.effective_resistance(),
+    'spt_cnt': lambda g: g.spanning_tree_count(),
 }
 
 def usage():
@@ -50,10 +63,10 @@ def usage():
     die(f"""\
 usage: {prog} [-vdu] [-t type[,type]] [-i format] [file...]
   -v              verbose mode
-  -d              directed graph (default)
-  -u              undirected graph
+  -d              directed graph
+  -u              undirected graph (default)
   -t type[,type]  specify statistic to display ({types})
-  -i format  input graph format ({import_fmts})
+  -i format       input graph format ({import_fmts})
 """)
 
 def format_number(n):
@@ -64,14 +77,13 @@ def format_number(n):
 def main():
     opt = getopts('vduat:i:') or usage()
 
-    directed = True
-    if opt.u:
-        directed = False
+    directed = False
+    if opt.d:
+        directed = True
     if opt.a:
         stat_types = sorted(STAT_TBL.keys())
 
-    stat_types = 'nodes edges degree dstdev dmin dmax direct connect clcoeff pathlen maxcomp'.split(
-    )
+    stat_types = STAT_TBL.keys()
     if opt.t:
         stat_types = opt.t.split(',')
 
