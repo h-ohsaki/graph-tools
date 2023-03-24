@@ -24,6 +24,9 @@ import os
 import random
 import sys
 
+home_dir = os.getenv('HOME')
+sys.path.insert(1, f'{home_dir}/src/graph-tools')
+
 from perlcompat import die, getopts
 import graph_tools
 
@@ -32,9 +35,9 @@ def usage():
     types = '/'.join(graph_tools.CREATE_TYPES)
     export_fmts = '/'.join(graph_tools.EXPORT_FORMATS)
     die(f"""\
-usage: {prog} [-du] [-t type] [-s seed] [-o format] params...
-  -d         generate directed graph (default)
-  -u         generate undirected graph
+usage: {prog} [-du] [-s seed] [-t type] [-s seed] [-o format] params...
+  -d         generate directed graph
+  -u         generate undirected graph (default)
   -t type    specify graph type ({types})
              parameters (defaults):
                  random/random_sparse: [N [E [no_multiedge]]] (N=20, E=10)
@@ -81,9 +84,11 @@ def validate_params(alist):
 
 def main():
     opt = getopts('dut:s:o:') or usage()
-    directed = opt.d if opt.d else not opt.u
+    directed = False
+    if opt.d:
+        directed = True
     atype = opt.t if opt.t else 'random'
-    seed = opt.s
+    seed = int(opt.s) if opt.s else None
     out_format = opt.o if opt.o else 'dot'
 
     if seed:
