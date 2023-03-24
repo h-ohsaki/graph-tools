@@ -24,12 +24,13 @@
 
 from collections import deque, defaultdict
 import functools
+import heapq
 import itertools
 import math
 import random
 import re
-import time
 import statistics
+import time
 
 from perlcompat import warn, die
 import numpy
@@ -74,7 +75,6 @@ EXPORT_SUBP = {
 EXPORT_FORMATS = sorted(EXPORT_SUBP.keys())
 
 EPS = 1e-10
-INFINITY = 2 << 30
 
 MAX_RETRIES = 100
 
@@ -180,10 +180,7 @@ class Graph:
 
     def has_vertex(self, v):
         """Check if vertex V exists in the graph."""
-        if self.V.get(v, None) is None:
-            return False
-        else:
-            return True
+        return v in self.V
 
     def add_vertex(self, v):
         """Attach vertex V to the graph if it does not exist."""
@@ -202,7 +199,7 @@ class Graph:
         if not ignore:
             self.expect_directed()
         # FIXME: should implement as a generator
-        if not self.EI.get(v, None):
+        if v not in self.EI:
             return []
         return self.EI[v].keys()
 
@@ -213,7 +210,7 @@ class Graph:
         if not ignore:
             self.expect_directed()
         # FIXME: Should implement as a generator.
-        if not self.EO.get(u, None):
+        if u not in self.EO:
             return []
         return self.EO[u].keys()
 
@@ -314,11 +311,9 @@ class Graph:
         """Check if the graph has edge (u, v)."""
         if self.undirected() and u > v:
             u, v = v, u
-        if not self.EO.get(u, None):
+        if u not in self.EO:
             return False
-        if not self.EO[u].get(v, None):
-            return False
-        return True
+        return v in self.EO[u]
 
     def get_multiedge_ids(self, u, v):
         """Return the edge identifiers (starting from zero) of edges between
@@ -345,14 +340,14 @@ class Graph:
             u, v = v, u
         count = self.get_edge_count(u, v)
         self.add_vertices(u, v)
-        if not self.EO.get(u, None):
+        if u not in self.EO:
             self.EO[u] = {}
-        if not self.EO[u].get(v, None):
+        if v not in self.EO[u]:
             self.EO[u][v] = {}
         self.EO[u][v][count] = {}  # default edge attributes
-        if not self.EI.get(v, None):
+        if v not in self.EI:
             self.EI[v] = {}
-        if not self.EI[v].get(u, None):
+        if u not in self.EI[v]:
             self.EI[v][u] = {}
         self.EI[v][u][count] = {}  # default edge attributes
         return count
@@ -491,6 +486,7 @@ class Graph:
         return self.get_edge_attribute_by_id(u, v, 0, 'weight')
 
     # algorithm ----------------------------------------------------------------
+    # https://stackoverflow.com/questions/22897209/dijkstras-algorithm-in-python
     def dijkstra(self, s):
         """Compute all shortest paths from source vertex S using Dijkstra's
         algorithm.  Return two dictionaries: DIST and PREV.  Dictionary DIST
@@ -502,31 +498,29 @@ class Graph:
         obtain the shortest path to vertex V by traversing dictionary PREV
         from vertex V back to source node S."""
         self.expect_undirected()
-        dist = {}
-        prev = {}
-        for v in self.vertices():
-            prev[v] = []
+        # Distance from the source to other vertices.
+        dist = {v: math.inf for v in self.vertices()}
         dist[s] = 0
+        prev = {v: [] for v in self.vertices()}
 
-        S = []
-        Q = self.vertices()
-        while Q:
-            Q = sorted(Q, key=lambda x: dist.get(x, INFINITY))
-            u = Q.pop(0)
-            if dist.get(u, None) is None:
-                break
-            S.append(u)
-            # NOTE: Use successors() for directeg graph.
+        visited = {}
+        queue = []
+        heapq.heappush(queue, (dist[s], s))
+        while queue:
+            _, u = heapq.heappop(queue)
+            visited[u] = True
             for v in self.neighbors(u):
+                if v in visited:
+                    continue
                 # FIXME: Must reject multi-edged graph.
                 w = self.get_edge_weight_by_id(u, v, 0) or 1
-                if dist.get(v, None) is None or dist[v] > (
-                        dist.get(u, INFINITY) + w):
+                if dist[u] + w < dist[v]:  # Is vertex V closer from vertex U?
                     dist[v] = dist[u] + w
                     prev[v] = [u]
-                elif dist[v] == (dist.get(u, INFINITY) +
-                                 w):  # Handle equal paths.
+                elif dist[u] + w == dist[v]:  # Handle equal paths.
                     prev[v].append(u)
+                heapq.heappush(queue, (dist[u] + w, v))
+
         self.T[s] = dist
         self.P[s] = prev
         return dist, prev
@@ -559,7 +553,7 @@ class Graph:
         if t in self.T[s]:
             return self.T[s][t]
         else:
-            return INFINITY
+            return math.inf
 
     def dijkstra_all_pairs(self):
         """Compute all-pairs shortest paths using Dijkstra's algorithm."""
@@ -568,7 +562,6 @@ class Graph:
 
     def floyd_warshall(self):
         """Compute all-pairs shortest paths using Floyd-Warshall algorithm."""
-        # self.expect_directed()
         # Initialize weight matrix.
         path = {}
         next_ = {}
@@ -576,23 +569,28 @@ class Graph:
             path[v] = {}
             next_[v] = {}
         for u, v in self.edges():
-            path[u][v] = self.get_edge_weight_by_id(u, v, 0) or 1
+            w = self.get_edge_weight_by_id(u, v, 0) or 1
+            path[u][v] = w
+            # if self.is_directed():
+            #     path[v][u] = w
 
         # Run Floyd-Warshall algorithm to find all-pairs shortest paths.
         for k in self.vertices():
             for u in self.vertices():
                 for v in self.vertices():
-                    if path[u].get(k, INFINITY) + path[k].get(
-                            v, INFINITY) < path[u].get(v, INFINITY):
+                    w_uk = path[u].get(k, math.inf)
+                    w_kv = path[k].get(v, math.inf)
+                    w_uv = path[u].get(v, math.inf)
+                    if w_uk + w_kv < w_uv:
                         path[u][v] = path[u][k] + path[k][v]
                         next_[u][v] = k
         self.T = path
 
     def is_reachable(self, u, v):
         """Check if any path exists from vertex U to vertex V."""
-        if not self.T.get(u, None):
+        if u not in self.T:
             self.dijkstra(u)
-        return self.T[u].get(v, None)
+        return v in self.T[u]
 
     def explore(self, s):
         """Return the list of all vertices reachable from vertex S."""
