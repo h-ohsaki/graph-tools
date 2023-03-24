@@ -155,11 +155,28 @@ class Graph:
             lengths.append(self.shortest_path_length(u, v))
         return statistics.mean(lengths)
 
+    def assortativity(self):
+        """Calcurate the assortativity of a graph.  See Eq. (4) in
+        M. E. J. Newman, `Assortative mixing in networks'."""
+        M = len(self.edges())
+        prod_sum, add_sum, square_sum = 0, 0, 0
+        for e in self.edges():
+            j, k = [self.degree(v) for v in e]
+            prod_sum += j * k
+            add_sum += (j + k) / 2
+            square_sum += (j**2 + k**2) / 2
+        r = prod_sum / M - (add_sum / M)**2
+        r /= square_sum / M - (add_sum / M)**2
+        return r
+
     # vertex ----------------------------------------------------------------
     def vertices(self):
         """Return all vertices in the graph as a list."""
         # FIXME: should implement as a generator
         return self.V.keys()
+
+    def nvertices(self):
+        return len(self.vertices())
 
     def has_vertex(self, v):
         """Check if vertex V exists in the graph."""
@@ -280,6 +297,9 @@ class Graph:
                 for id_ in self.get_multiedge_ids(u, v):
                     found.append([u, v])
         return found
+
+    def nedges(self):
+        return len(self.edges())
 
     def unique_edges(self):
         """Return all unique edges in the graph as a list.  All multi-edges
@@ -586,12 +606,12 @@ class Graph:
                 if v not in explored:
                     need_visit.add(v)
         return explored
-            
+
     def is_connected(self):
         """Check if all vertices in the graph are mutually connected."""
         v = self.random_vertex()
         explored = self.explore(v)
-        return len(explored) == len(self.vertices())
+        return len(explored) == self.nvertices()
 
     def components(self):
         """Return all components (i.e., connected subgraphs) of the graph.
@@ -614,7 +634,10 @@ class Graph:
         maximal = max(self.components(), key=lambda x: len(x))
         return maximal
 
-    def betweenness(self, v):
+    def degree_centrality(self, v):
+        return self.degree(v) / (self.nvertices() - 1)
+
+    def betweenness_centrality(self, v, normalize=True):
         """Return the betweenness centrality for vertex v.  This program
         implements Algorithm 1 (betweenness centrality in unweighted graphs)
         in U. Brandes, `A Fast Algorithm for Betweeness Centrality,' Journal
@@ -665,7 +688,26 @@ class Graph:
 
         if not v in self.Cb:
             _update_betweenness()
-        return self.Cb[v]
+        if normalize:
+            n = self.nvertices()
+            return self.Cb[v] / ((n - 1) * (n - 2))
+        else:
+            return self.Cb[v]
+
+    def closeness_centrality(self, v):
+        d = sum([self.shortest_path_length(v, u) for u in self.vertices()])
+        n = self.nvertices()
+        return n / d
+
+    def eigenvector_centrality(self, v):
+        adj = self.adjacency_matrix()
+        eigvals, eigvecs = numpy.linalg.eig(adj)
+        # Find the index of the largest eigenvalue.
+        i = max(enumerate(eigvals), key=lambda x: x[1])[0]
+        eigvec = eigvecs[:, i]
+        if eigvec[0] < 0:
+            eigvec = -eigvec
+        return eigvec[v - 1]
 
     def eccentricity(self, v):
         lengths = [self.shortest_path_length(v, u) for u in self.vertices()]
@@ -717,7 +759,7 @@ class Graph:
     def adjacency_matrix(self):
         """Return the adjacency matrix of the graph as NumPy.ndarray
         object."""
-        N = len(self.vertices())
+        N = self.nvertices()
         m = numpy.zeros((N, N), int)
         for u, v in self.edges():
             m[u - 1, v - 1] += 1
@@ -727,7 +769,7 @@ class Graph:
 
     def diagonal_matrix(self):
         """Return the diagonal matrix of the graph as NumPy.ndarray object."""
-        N = len(self.vertices())
+        N = self.nvertices()
         m = numpy.zeros((N, N), int)
         for v in self.vertices():
             m[v - 1, v - 1] = self.degree(v)
@@ -758,7 +800,7 @@ class Graph:
 
     def natural_connectivity(self):
         """Return the natural connectivity from spectral graph theory."""
-        N = len(self.vertices())
+        N = self.nvertices()
         lmbda = self.adjacency_matrix_eigvals()
         return math.log(sum(numpy.exp(lmbda)) / N)
 
@@ -769,13 +811,13 @@ class Graph:
 
     def effective_resistance(self):
         """Return the effective resistance from spectral graph theory."""
-        N = len(self.vertices())
+        N = self.nvertices()
         mu = self.laplacian_matrix_eigvals()
         return N * sum([1 / (mu + 1e-100) for mu in mu[1:]])
 
     def spanning_tree_count(self):
         """Return the spanning tree count from spectral graph theory."""
-        N = len(self.vertices())
+        N = self.nvertices()
         mu = self.laplacian_matrix_eigvals()
         return functools.reduce(lambda x, y: x * y,
                                 [1 / (mu + 1e-100) for mu in mu[1:]]) / N
@@ -784,8 +826,8 @@ class Graph:
     def header_string(self, comment='# '):
         date = time.strftime('%Y/%M/%D %H:%M:%S', time.localtime())
         atype = 'directed' if self.is_directed() else 'undirected'
-        vcount = len(self.vertices())
-        ecount = len(self.edges())
+        vcount = self.nvertices()
+        ecount = self.nedges()
         astr = f"{comment}Generated by graph-tools (version {VERSION}) at {date}]\n{comment}{atype}, {vcount} vertices, {ecount} edges\n"
         return astr
 
@@ -982,16 +1024,10 @@ class Graph:
         # Create a vertex and attach to another using preferential attachment.
         for u in range(2, N + 1):
             # Randomly choose a vertex with a probability proportional to attract.
-            total = sum(attract)
-            chosen = random.uniform(0, total)
-            accum = 0
-            for v in range(1, N + 1):
-                accum += attract[v - 1]
-                if chosen < accum:
-                    self.add_edge(u, v)
-                    attract[u - 1] = alpha + len(self.in_edges(u))
-                    attract[v - 1] = alpha + len(self.in_edges(v))
-                    break
+            v = random.choices(range(1, N + 1), weights=attract, k=1)[0]
+            self.add_edge(u, v)
+            attract[u - 1] = alpha + len(self.in_edges(u))
+            attract[v - 1] = alpha + len(self.in_edges(v))
         return self
 
     def create_generalized_barabasi_graph(self, N=10, m=2, gamma=3, m0=2):
@@ -1011,8 +1047,8 @@ class Graph:
             self.add_vertex(u)
 
             # Attach to a vertex using preferential attachment.
-            vcount = len(self.vertices()) - 1
-            ecount = len(self.edges())
+            vcount = self.nvertices() - 1
+            ecount = self.nedges()
             for j in range(1, m + 1):
                 # NOTE: Preferential-attachement with probability A + in_degree.
                 total = A * vcount + ecount
