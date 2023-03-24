@@ -36,7 +36,7 @@ import numpy
 import pytess
 import tbdump
 
-VERSION = 1.6
+VERSION = 1.7
 
 CREATE_SUBP = {
     'random': 'create_random_graph',
