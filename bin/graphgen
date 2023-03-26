@@ -24,9 +24,6 @@ import os
 import random
 import sys
 
-home_dir = os.getenv('HOME')
-sys.path.insert(1, f'{home_dir}/src/graph-tools')
-
 from perlcompat import die, getopts
 import graph_tools
 
@@ -60,6 +57,7 @@ usage: {prog} [-du] [-s seed] [-t type] [-s seed] [-o format] params...
                  regular: [N [k]] (N=10, k=3)
                  li_maini: [T [M [m0 [m [alpha [n]]]]]] (T=200, M=4, m0=4, m=1, alpha=.1, n=1)
                  preset: [n] (n=0)
+                 star: [n] (n=10)
   -s seed    specify random number seed
   -o format  output graph format ({export_fmts})
 """)
