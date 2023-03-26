@@ -12,8 +12,8 @@ buf = """digraph sample {
 }
 """.splitlines()
 g.import_graph('dot', buf)
-eq(len(g.vertices()), 2)
-eq(len(g.edges()), 1)
+eq(g.nvertices(), 2)
+eq(g.nedges(), 1)
 ok(g.is_directed())
 ok(g.has_edge(1, 2))
 
@@ -30,8 +30,8 @@ digraph sample {
 }
 """.splitlines()
 g.import_graph('dot', buf)
-eq(len(g.vertices()), 3)
-eq(len(g.edges()), 2)
+eq(g.nvertices(), 3)
+eq(g.nedges(), 2)
 ok(g.is_directed())
 ok(g.has_edge(1, 2))
 ok(g.has_edge(1, 4))
@@ -47,8 +47,8 @@ digraph sample {
 }
 """.splitlines()
 g.import_graph('dot', buf)
-eq(len(g.vertices()), 2)
-eq(len(g.edges()), 2)
+eq(g.nvertices(), 2)
+eq(g.nedges(), 2)
 eq(g.is_directed(), 1)
 ok(g.has_edge(1, 2))
 eq(g.get_vertex_attribute(1, 'color'), 'yellow')
