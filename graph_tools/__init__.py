@@ -60,21 +60,23 @@ CREATE_SUBP = {
     'configuration': 'create_configuration_graph',
     'regular': 'create_random_regular_graph',
     'li_maini': 'create_li_maini_graph',
+    'preset': 'create_preset_graph',
 }
 CREATE_TYPES = sorted(CREATE_SUBP.keys())
 
 IMPORT_SUBP = {
     'dot': 'import_dot',
+    'edges': 'import_edge_list',
+    'cell': 'import_cell',
 }
 IMPORT_FORMATS = sorted(IMPORT_SUBP.keys())
 
 EXPORT_SUBP = {
     'dot': 'export_dot',
+    'edges': 'export_edge_list',
     'cell': 'export_cell',
 }
 EXPORT_FORMATS = sorted(EXPORT_SUBP.keys())
-
-EPS = 1e-10
 
 MAX_RETRIES = 100
 
@@ -1367,6 +1369,14 @@ class Graph:
 
         return self
 
+    def create_preset_graph(self, n=0):
+        self.import_edge_list("""\
+1 2
+2 3
+2 4
+3 4""".splitlines())
+        return self
+
     # import ----------------------------------------------------------------
     def import_graph(self, fmt, *args):
         name = IMPORT_SUBP.get(fmt, None)
@@ -1448,6 +1458,40 @@ class Graph:
                 self.add_vertex(v)
                 self.set_vertex_attributes(v, attrs)
 
+    def import_edge_list(self, lines):
+        """Creaete undirected graph from LINES in which every line describes
+        an edge (a pair of vertices) with its optional weight.  A prt of the
+        line after # are ignored.
+
+        Examples:
+        # unweighted K3 (complete graph with three vertices)
+        1 2
+        2 3
+        1 3
+
+        # weighted C4 (cubic)
+        1 2 1.5
+        2 3 1.1
+        3 4     # default to 1
+        4 1 2
+"""
+        for line in lines:
+            line = line.rstrip()
+            line = re.sub(r'#.*$', '', line)
+            u, v, *rest = line.split()
+            self.add_edge(u, v)
+            if rest:
+                w = float(rest[0])
+                self.set_edge_weight(u, v, w)
+
+    def import_cell(self, lines):
+        for line in lines:
+            line = line.rstrip()
+            m = re.search(r'define\s+e\d+\s+link\s+v(\d+)\s+v(\d+)', line)
+            if m:
+                u, v = map(int, m.groups())
+                self.add_edge(u, v)
+
     # ----------------------------------------------------------------
     def export_graph(self, fmt, *args):
         name = EXPORT_SUBP.get(fmt, None)
@@ -1468,8 +1512,6 @@ class Graph:
                 alist = []
                 for key, val in attrs.items():
                     alist.append(f'{key}="{val}"')
-                astr += ' [' + (', '.join(alist)) + ']'
-            astr += ';\n'
 
         for edge in sorted(self.unique_edges(), key=lambda e: e[0]):
             u = edge[0]
@@ -1487,6 +1529,16 @@ class Graph:
                     astr += ' [' + (', '.join(alist)) + ']'
                 astr += ';\n'
         astr += '}\n'
+        return astr
+
+    def export_edge_list(self, *args):
+        astr = ''
+        for u, v in self.edges():
+            w = self.get_edge_weight(u, v)
+            if w:
+                astr += f'{u} {v} {w}\n'
+            else:
+                astr += f'{u} {v}\n'
         return astr
 
     def export_cell(self, *args):
