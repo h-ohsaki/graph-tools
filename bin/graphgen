@@ -59,6 +59,7 @@ usage: {prog} [-du] [-s seed] [-t type] [-s seed] [-o format] params...
                  configuration [degree_seq] (degree_seq=6,5,4,3,3,3,2,2,1,1)
                  regular: [N [k]] (N=10, k=3)
                  li_maini: [T [M [m0 [m [alpha [n]]]]]] (T=200, M=4, m0=4, m=1, alpha=.1, n=1)
+                 preset: [n] (n=0)
   -s seed    specify random number seed
   -o format  output graph format ({export_fmts})
 """)
@@ -95,7 +96,7 @@ def main():
         random.seed(seed)
     g = graph_tools.Graph(directed)
     g = g.create_graph(atype, *validate_params(sys.argv[1:]))
-    print(g.export_graph(out_format))
+    print(g.export_graph(out_format), end='')
 
 if __name__ == "__main__":
     main()
