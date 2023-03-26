@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+#
+# Load graph from STDIN and write to STDOUT after filtering.
+# Copyright (c) 2023, Hiroyuki Ohsaki.
+# All rights reserved.
+#
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# This program is contributed by Hal.
+
+import fileinput
+import os
+import random
+import sys
+
+from perlcompat import die, warn, getopts
+import graph_tools
+import tbdump
+
+def usage():
+    prog = os.path.basename(sys.argv[0])
+    in_fmts = '/'.join(graph_tools.IMPORT_FORMATS)
+    out_fmts = '/'.join(graph_tools.EXPORT_FORMATS)
+    die(f"""\
+usage: {prog} [-vdu] [-s #] [-i fmt] [-o fmt] [-f name[,name...]] [file...]
+  -v                 verbose mode (default)
+  -d                 directed graph
+  -u                 undirected graph (default)
+  -s seed            random number seed
+  -i fmt             input graph format ({in_fmts})
+  -o fmt             output graph format ({out_fmts})
+  -f name[,name...]  list of filters to apply
+""")
+
+def main():
+    opt = getopts('vdus:i:o:f:') or usage()
+    verbose = opt.v
+    directed = False
+    if opt.d:
+        directed = True
+    seed = int(opt.s) if opt.s else None
+    if seed:
+        random.seed(seed)
+    in_fmt = opt.i if opt.i else 'dot'
+    out_fmt = opt.o if opt.o else 'dot'
+    filters = opt.f.split(',') if opt.f else []
+
+    # Load graph.
+    g = graph_tools.Graph(directed=directed)
+    lines = []
+    for line in fileinput.input():
+        line = line.rstrip()
+        lines.append(line)
+    g.import_graph(in_fmt, lines)
+
+    for f in filters:
+        if f == 'none':
+            pass
+        if f == 'rm':
+            g.random_matching_coarsening()
+        if f == 'coarsenet':
+            g.coarsenet_coarsening()
+
+    print(g.export_graph(out_fmt), end='')
+
+if __name__ == "__main__":
+    main()
