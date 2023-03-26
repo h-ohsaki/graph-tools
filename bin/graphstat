@@ -25,9 +25,6 @@ import os
 import statistics
 import sys
 
-home_dir = os.getenv('HOME')
-sys.path.insert(1, f'{home_dir}/src/graph-tools')
-
 from perlcompat import die, warn, getopts
 import graph_tools
 import tbdump
@@ -56,8 +53,8 @@ def eigenvector_centrality(g):
     return [(v, g.eigenvector_centrality(v)) for v in g.vertices()]
 
 STAT_TBL = {
-    'nodes': lambda g: len(g.vertices()),
-    'edges': lambda g: len(g.edges()),
+    'nodes': lambda g: g.nvertices(),
+    'edges': lambda g: g.nedges(),
     'avg_degree': lambda g: g.average_degree(),
     'degree_stdev': lambda g: statistics.stdev(g.degrees()),
     'min_degree': lambda g: min(g.degrees()),
@@ -77,9 +74,9 @@ STAT_TBL = {
     'algebric_connectivity': lambda g: g.algebraic_connectivity(),
     'effective_resistance': lambda g: g.effective_resistance(),
     'spanning_tree_count': lambda g: g.spanning_tree_count(),
-    'degree_cent': degree_centrality,
-    'closeness_cent': closeness_centrality,
-    'eigenvector_cent': eigenvector_centrality,
+    # 'degree_cent': degree_centrality,
+    # 'closeness_cent': closeness_centrality,
+    # 'eigenvector_cent': eigenvector_centrality,
 }
 
 def format_number(x):
