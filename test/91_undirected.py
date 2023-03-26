@@ -26,11 +26,11 @@ ok(g.has_edge(2, 1))
 ok(not g.has_edge(1, 3))
 ok(not g.has_edge(4, 1))
 
-eq(len(g.vertices()), 4)
+eq(g.nvertices(), 4)
 eq(len(g.neighbors(1)), 1)
 eq(len(g.neighbors(2)), 2)
 
-eq(len(g.edges()), 4)
+eq(g.nedges(), 4)
 eq(len(g.unique_edges()), 3)
 eq(len(g.edges_at(1)), 2)
 eq(len(g.edges_at(2)), 3)
