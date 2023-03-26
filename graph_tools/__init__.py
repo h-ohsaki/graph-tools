@@ -61,6 +61,7 @@ CREATE_SUBP = {
     'regular': 'create_random_regular_graph',
     'li_maini': 'create_li_maini_graph',
     'preset': 'create_preset_graph',
+    'star': 'create_star_graph',
 }
 CREATE_TYPES = sorted(CREATE_SUBP.keys())
 
@@ -160,7 +161,7 @@ class Graph:
     def assortativity(self):
         """Calcurate the assortativity of a graph.  See Eq. (4) in
         M. E. J. Newman, `Assortative mixing in networks'."""
-        M = len(self.edges())
+        M = self.nedges()
         prod_sum, add_sum, square_sum = 0, 0, 0
         for e in self.edges():
             j, k = [self.degree(v) for v in e]
@@ -174,8 +175,14 @@ class Graph:
     # vertex ----------------------------------------------------------------
     def vertices(self):
         """Return all vertices in the graph as a list."""
-        # FIXME: should implement as a generator
         return self.V.keys()
+
+    def vertex_index(self, v):
+        # FIXME: This code is inefficient.
+        for n, u in enumerate(self.vertices()):
+            if u == v:
+                return n
+        return None
 
     def nvertices(self):
         return len(self.vertices())
@@ -200,7 +207,6 @@ class Graph:
         IGNORE is true."""
         if not ignore:
             self.expect_directed()
-        # FIXME: should implement as a generator
         if v not in self.EI:
             return []
         return self.EI[v].keys()
@@ -211,7 +217,6 @@ class Graph:
         IGNORE is true."""
         if not ignore:
             self.expect_directed()
-        # FIXME: Should implement as a generator.
         if u not in self.EO:
             return []
         return self.EO[u].keys()
@@ -290,15 +295,17 @@ class Graph:
     # edge ----------------------------------------------------------------
     def edges(self):
         """Return all edges in the graph as a list."""
-        found = []
         for u in self.EO:
             for v in self.EO[u]:
                 for id_ in self.get_multiedge_ids(u, v):
-                    found.append([u, v])
-        return found
+                    yield u, v
 
     def nedges(self):
-        return len(self.edges())
+        return len(list(self.edges()))
+
+    def edge_indices(self):
+        for u, v in self.edges():
+            yield self.vertex_index(u), self.vertex_index(v)
 
     def unique_edges(self):
         """Return all unique edges in the graph as a list.  All multi-edges
@@ -428,7 +435,7 @@ class Graph:
 
     def random_edge(self):
         """Randomly choose an edge from all edges."""
-        return random.choice(self.edges())
+        return random.choice(list(self.edges()))
 
     def set_edge_attribute_by_id(self, u, v, n, attr, val):
         """Define the attribute of the N-th edge between vertices U and V
@@ -700,13 +707,10 @@ class Graph:
 
     def eigenvector_centrality(self, v):
         adj = self.adjacency_matrix()
-        eigvals, eigvecs = numpy.linalg.eig(adj)
-        # Find the index of the largest eigenvalue.
-        i = max(enumerate(eigvals), key=lambda x: x[1])[0]
-        eigvec = eigvecs[:, i]
-        if eigvec[0] < 0:
-            eigvec = -eigvec
-        return eigvec[v - 1]
+        eigvec = self.maximum_eigvec(adj)
+        eigvec = self.negate_if_negative(eigvec)
+        vi = self.vertex_index(v)
+        return eigvec[vi]
 
     def eccentricity(self, v):
         lengths = [self.shortest_path_length(v, u) for u in self.vertices()]
@@ -760,10 +764,10 @@ class Graph:
         object."""
         N = self.nvertices()
         m = numpy.zeros((N, N), int)
-        for u, v in self.edges():
-            m[u - 1, v - 1] += 1
+        for ui, vi in self.edge_indices():
+            m[ui, vi] += 1
             if self.undirected():
-                m[v - 1, u - 1] += 1
+                m[vi, ui] += 1
         return m
 
     def diagonal_matrix(self):
@@ -771,7 +775,8 @@ class Graph:
         N = self.nvertices()
         m = numpy.zeros((N, N), int)
         for v in self.vertices():
-            m[v - 1, v - 1] = self.degree(v)
+            vi = self.vertex_index(v)
+            m[vi, vi] = self.degree(v)
         return m
 
     def laplacian_matrix(self):
@@ -779,18 +784,48 @@ class Graph:
         object."""
         return self.diagonal_matrix() - self.adjacency_matrix()
 
+    def eigenvals(self, m):
+        """Return the eigenvalues of matrix M.  Eigenvalues are sorted in the
+        ascending order."""
+        eigvals, eigvecs = numpy.linalg.eig(m)
+        return sorted(eigvals)
+
+    def maximum_eigenval(self, m):
+        """Return the maximum eigenvalue of matrix M."""
+        return self.eigenvals(m)[-1]
+
+    def maximum_eig(self, m):
+        """Return the maximum eigenvalue and the corresponding eigenvector of
+        matrix M."""
+        eigvals, eigvecs = numpy.linalg.eig(m)
+        # Find the index of the largest eigenvalue.
+        i = max(enumerate(eigvals), key=lambda x: x[1])[0]
+        eigval = eigvals[i]
+        eigvec = eigvecs[:, i]
+        return eigval, eigvec
+
+    def maximum_eigvec(self, m):
+        """Return the principal eigenvector of M corresponding the maximum
+        eigenvalue."""
+        eigvals, eigvec = self.maximum_eig(m)
+        return eigvec
+
+    def negate_if_negative(self, vec):
+        if any([x < 0 for x in vec]):
+            vec = -vec
+        return vec
+
     def adjacency_matrix_eigvals(self):
         """Return eigenvalues of the adjacency matrix."""
-        return sorted(numpy.linalg.eigvals(self.adjacency_matrix()))
+        return self.eigenvals(self.adjacency_matrix())
 
     def laplacian_matrix_eigvals(self):
         """Return eigenvalues of the Laplacian matrix."""
-        return sorted(numpy.linalg.eigvals(self.laplacian_matrix()))
+        return self.eigenvals(self.laplacian_matrix())
 
     def spectral_radius(self):
         """Return the spectral raduis from spectral graph theory."""
-        lmbda = self.adjacency_matrix_eigvals()
-        return lmbda[-1]
+        return self.maximum_eigenval(self.adjacency_matrix())
 
     def spectral_gap(self):
         """Return the spectral gap from spectral graph theory."""
@@ -820,6 +855,66 @@ class Graph:
         mu = self.laplacian_matrix_eigvals()
         return functools.reduce(lambda x, y: x * y,
                                 [1 / (mu + 1e-100) for mu in mu[1:]]) / N
+
+    # coarsening ----------------------------------------------------------------
+    def merge_vertices(self, u, v):
+        """Delete vertex U after connecting all neighbors (except vertex U) of
+        vertex V to vertex U."""
+        for t in self.neighbors(v):
+            if u == t:
+                continue
+            if not self.has_edge(u, t):
+                self.add_edge(u, t)
+                w = self.get_edge_weight(v, t)
+                if w:
+                    self.set_edge_weight(u, t, w)
+            self.delete_edge(v, t)
+        self.delete_edge(u, v)
+        self.delete_vertex(v)
+
+    def random_matching_coarsening(self, alpha=.5):
+        # FIXME: Support directed graphs.
+        self.expect_undirected()
+        n = self.nvertices()
+        while self.nvertices() > n * alpha:
+            u, v = self.random_edge()
+            self.merge_vertices(u, v)
+
+    def coarsenet_coarsening(self, alpha=.5):
+        def d_lambda(lmbda, u, v, a, b):
+            # Weight of edges (a, b) and (b, a), respectively.
+            # FIXME: This code assumes vertex IDs are 1...N.
+            beta1 = adj[a - 1][b - 1]
+            beta2 = adj[b - 1][a - 1]
+            # Calcurate \Delta \lambda using Proposition 5.2.
+            term1 = (u[a - 1] * v[a - 1] + u[b - 1] * v[b - 1])
+            ut_co = (1 + beta2) / 2 * (lmbda * u[a - 1] - beta1 * u[b - 1])
+            ut_co += (1 + beta1) / 2 * (lmbda * u[b - 1] - beta2 * u[a - 1])
+            term2 = v[a - 1] * ut_co
+            term3 = beta2 * u[a - 1] * v[b - 1]
+            term4 = beta1 * u[b - 1] * v[a - 1]
+            denom = numpy.dot(v.transpose(), u)
+            delta = (-lmbda * term1 + term2 + term3 + term4) / (denom - term1)
+            return delta
+
+        # FIXME: Support directed graphs.
+        self.expect_undirected()
+        n = self.nvertices()
+        adj = self.adjacency_matrix()
+        # lmbda: lambda (maximum eigenvalue of adjacency matrix)
+        # u: right eigenvector corresponding lambda
+        # v: left eigenvector corresponding lambda
+        lmbda, u = self.maximum_eig(adj)
+        # NOTE: u = v if adjacency matrix is symmetric?
+        _, v = self.maximum_eig(adj.transpose())
+        # u and v must be positive unit vector.
+        u = self.negate_if_negative(u)
+        v = self.negate_if_negative(v)
+        scores = [(d_lambda(lmbda, u, v, a, b), a, b) for a, b in self.edges()]
+        scores = sorted(scores, key=lambda x: abs(x[0]))
+        while self.nvertices() > n * alpha:
+            _, u, v = scores.pop(0)
+            self.merge_vertices(u, v)
 
     # util ----------------------------------------------------------------
     def header_string(self, comment='# '):
@@ -919,7 +1014,7 @@ class Graph:
             self.add_vertex(u)
 
             # Attach to a vertex using preferential attachment.
-            edges = self.edges()
+            edges = list(self.edges())
             for i in range(1, m + 1):
                 # NOTE: Degree-preferential attachment is realized by
                 # selecting a vertex connected to a randomly-chosen edge.
@@ -952,7 +1047,7 @@ class Graph:
             # Attach to a vertex using preferential attachment.
             # NOTE: Degree-preferential attachment is realized by
             # selecting a vertex connected to a randomly-chosen edge.
-            edges = self.edges()
+            edges = list(self.edges())
             while True:
                 edge = random.choice(edges)
                 v = random.choice(edge)
@@ -1377,6 +1472,11 @@ class Graph:
 3 4""".splitlines())
         return self
 
+    def create_star_graph(self, n=10):
+        for v in range(2, n + 1):
+            self.add_edge(1, v)
+        return self
+
     # import ----------------------------------------------------------------
     def import_graph(self, fmt, *args):
         name = IMPORT_SUBP.get(fmt, None)
@@ -1512,6 +1612,7 @@ class Graph:
                 alist = []
                 for key, val in attrs.items():
                     alist.append(f'{key}="{val}"')
+            astr += ';\n'
 
         for edge in sorted(self.unique_edges(), key=lambda e: e[0]):
             u = edge[0]
@@ -1542,18 +1643,22 @@ class Graph:
         return astr
 
     def export_cell(self, *args):
-        v_size = 12
-        v_color = 'white'
-        e_width = 1
-        e_color = 'blue'
-        out = ''
+        out = """\
+palette tcolor 1 1 1
+palette vcolor 1 .8 0 .3
+palette ecolor 0 .6 1 .5
+"""
+        max_degree = max([self.degree(v) for v in self.vertices()])
         for v in sorted(self.vertices()):
-            out += f'define v{v} text {v} {v_size} {v_color}\n'
+            # NOTE: Vertices with the maximum degree are drawn with 10% height/width.
+            r = .05 * self.degree(v) / max_degree
+            out += f'define v{v} ellipse {r} {r} vcolor\n'
+            out += f'define t{v} text {v} 12 tcolor\n'
+            out += f'attach t{v} v{v}\n'
         n = 1
         for u, v in sorted(self.edges()):
-            out += f'define e{n} link v{u} v{v} {e_width} {e_color}\n'
+            out += f'define e{n} link v{u} v{v} 1 ecolor\n'
             n += 1
-
         out += 'spring /^v/\n'
         out += 'display\n'
         out += 'wait\n'
