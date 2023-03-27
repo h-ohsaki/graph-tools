@@ -34,7 +34,6 @@ import time
 
 from perlcompat import warn, die
 import numpy
-import pytess
 import tbdump
 
 VERSION = 1.8
@@ -82,6 +81,8 @@ EXPORT_FORMATS = sorted(EXPORT_SUBP.keys())
 MAX_RETRIES = 100
 
 class Graph:
+    # FIXME: Support non-multiedged graph; multiedged option is always
+    # regarded as True.
     def __init__(self, directed=True, multiedged=True):
         self.G = {}  # Graph attributes.
         self.V = {}  # Vertices.
@@ -292,6 +293,9 @@ class Graph:
         for v in alist:
             self.delete_vertex(v)
 
+    def delete_all_vertices(self):
+        self.delete_vertices(self.vertices())
+
     def random_vertex(self):
         """Randomly choose a vertex from all vertices."""
         return random.choice(list(self.vertices()))
@@ -347,7 +351,7 @@ class Graph:
         else:
             return 0
 
-    def add_edge(self, u, v):
+    def add_edge(self, u, v, weight=None):
         """Add an edge from vertex U to vertex V."""
         if self.undirected() and u > v:
             u, v = v, u
@@ -363,6 +367,8 @@ class Graph:
         if u not in self.EI[v]:
             self.EI[v][u] = {}
         self.EI[v][u][count] = {}  # default edge attributes
+        if weight:
+            self.set_edge_weight_by_id(u, v, count, weight)
         return count
 
     def delete_edge(self, u, v):
@@ -768,10 +774,13 @@ class Graph:
         object."""
         N = self.nvertices()
         m = numpy.zeros((N, N), int)
-        for ui, vi in self.edge_indices():
-            m[ui, vi] += 1
+        for u, v in self.edges():
+            w = self.get_edge_weight(u, v) or 1
+            ui = self.vertex_index(u)
+            vi = self.vertex_index(v)
+            m[ui, vi] += w
             if self.undirected():
-                m[vi, ui] += 1
+                m[vi, ui] += w
         return m
 
     def diagonal_matrix(self):
@@ -787,6 +796,17 @@ class Graph:
         """Return the Laplacian matrix of the graph as NumPy.ndarray
         object."""
         return self.diagonal_matrix() - self.adjacency_matrix()
+
+    def weight_matrix(self):
+        """Return the weight matrix of the graph."""
+        nedges = self.nedges()
+        m = numpy.zeros((nedges, nedges), int)
+        for u, v in self.edges():
+            w = self.get_edge_weight(u, v) or 1
+            ui = self.vertex_index(u)
+            vi = self.vertex_index(v)
+            m[ui][vi] = m[vi][ui] = w
+        return m
 
     def eigenvals(self, m):
         """Return the eigenvalues of matrix M.  Eigenvalues are sorted in the
@@ -864,14 +884,20 @@ class Graph:
     def merge_vertices(self, u, v):
         """Delete vertex U after connecting all neighbors (except vertex U) of
         vertex V to vertex U."""
+        if u == v:
+            return
         for t in self.neighbors(v):
-            if u == t:
+            if t == u:
                 continue
-            if not self.has_edge(u, t):
+            # Note: w might be None (i.e., no weight specified)
+            w = self.get_edge_weight(v, t)
+            if self.has_edge(u, t):
+                new_w = self.get_edge_weight(u, t) or 1
+                new_w += w or 1
+                self.set_edge_weight(u, t, new_w)
+            else:
                 self.add_edge(u, t)
-                w = self.get_edge_weight(v, t)
-                if w:
-                    self.set_edge_weight(u, t, w)
+                self.set_edge_weight(u, t, w)
             self.delete_edge(v, t)
         self.delete_edge(u, v)
         self.delete_vertex(v)
@@ -924,9 +950,10 @@ class Graph:
             self.merge_vertices(u, v)
 
     def MGC_coarsening(self, alpha=.5):
-        def find_distances():
+        # FIXME: Seems to fail appropriate coarsening.
+        def find_vertices_with_minimum_distance():
             adj = self.adjacency_matrix()
-            dist = []
+            dmin = None
             for v in self.vertices():
                 # Collect all 2-hop neighbors from vertex V.
                 neighbors = self.neighbors(v, 2)
@@ -938,19 +965,65 @@ class Graph:
                     iu = self.vertex_index(u)
                     lu = adj[iu]
                     d = numpy.linalg.norm(lv / dv - lu / du, ord=1)
-                    print(v, u, lv/dv, lu/du, lv/dv-lu/du,d)
-                    dist.append((d, v, u))
-            return dist
+                    if dmin is None or d < dmin:
+                        dmin = d
+                        umin, vmin = u, v
+            return dmin, umin, vmin
 
         # FIXME: Support directed graphs.
         self.expect_undirected()
         nvertices = self.nvertices()
         while self.nvertices() > nvertices * alpha:
-            dist = find_distances()
-            dist = sorted(dist, key=lambda x: x[0])
-            d, u, v = dist[0]
+            d, u, v = find_vertices_with_minimum_distance()
             warn(f'MGC: d={d} edge=({u}, {v})')
             self.merge_vertices(u, v)
+
+    def add_edges_from_sparse_graph(self, sg):
+        edges = sg.get_edge_list()
+        for ui, vi, w in zip(*edges):
+            u, v = ui + 1, vi + 1
+            self.add_edge(u, v)
+            self.set_edge_weight(u, v, w)
+
+    def local_variation_coarsening(self, alpha=.5, method='neighbor'):
+        import pygsp
+        import graph_coarsening
+        # Create a sparse graph from the weight matrix.
+        g = pygsp.graphs.Graph(self.weight_matrix())
+        r = 1 - alpha  # r=0 means no reduction.
+        if method == 'neighbor':
+            m = 'variation_neighborhood'
+        elif method == 'edge':
+            m = 'variation_edges'
+        else:
+            die(f"local_variation_coarsening: Invalid contract method `{method}'."
+                )
+        # C: coarsening matrix
+        # Gc: coarsed graph
+        # Call: coarsening matrix at all levels
+        # Gall: coarsed graph at all levels
+        C, Gc, Call, Gall = graph_coarsening.coarsen(g, r=r, method=m)
+        # Rewrite all edges according to Gc.
+        self.delete_vertices(list(self.vertices()))
+        self.add_edges_from_sparse_graph(Gc)
+
+    def local_variation_neighbor_coarsening(self, alpha=.5):
+        self.local_variation_coarsening(self, alpha=alpha, method='neighbor')
+
+    def local_variation_edge_coarsening(self, alpha=.5):
+        self.local_variation_coarsening(self, alpha=alpha, method='edge')
+
+    def kron_coarsening(self, alpha=.5):
+        import pygsp
+        import graph_coarsening
+        import graph_coarsening.coarsening_utils
+        # Create a sparse graph from the weight matrix.
+        g = pygsp.graphs.Graph(self.weight_matrix())
+        r = 1 - alpha  # r=0 means no reduction.
+        Gc, Gs0 = graph_coarsening.coarsening_utils.kron_coarsening(g, r=r)
+        # Rewire all edges according to Gc
+        self.delete_vertices(list(self.vertices()))
+        self.add_edges_from_sparse_graph(Gc)
 
     # util ----------------------------------------------------------------
     def header_string(self, comment='# '):
@@ -1297,6 +1370,7 @@ class Graph:
         return self
 
     def create_voronoi_graph(self, npoints=10, width=1, height=1):
+        import pytess
         points = [(random.uniform(0, width), random.uniform(0, height))
                   for n in range(npoints)]
         polys = pytess.voronoi(points)
@@ -1662,7 +1736,10 @@ class Graph:
                 if attrs:
                     alist = []
                     for key, val in attrs.items():
-                        alist.append(f'{key}="{val}"')
+                        if type(val) == str:
+                            alist.append(f'{key}="{val}"')
+                        else:
+                            alist.append(f'{key}={val}')
                     astr += ' [' + (', '.join(alist)) + ']'
                 astr += ';\n'
         astr += '}\n'
@@ -1693,7 +1770,8 @@ palette ecolor 0 .6 1 .5
             out += f'attach t{v} v{v}\n'
         n = 1
         for u, v in sorted(self.edges()):
-            out += f'define e{n} link v{u} v{v} 1 ecolor\n'
+            w = (self.get_edge_weight(u, v) or 1) * 2
+            out += f'define e{n} link v{u} v{v} {w} ecolor\n'
             n += 1
         out += 'spring /^v/\n'
         out += 'display\n'
