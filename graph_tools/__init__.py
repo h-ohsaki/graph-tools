@@ -221,14 +221,18 @@ class Graph:
             return []
         return self.EO[u].keys()
 
-    def neighbors(self, v):
-        """Return all neighbor nodes of vetex V."""
-        found = set()
-        for u in self.predecessors(v, ignore=True):
-            found.add(u)
-        for u in self.successors(v, ignore=True):
-            found.add(u)
-        return found
+    def neighbors(self, v, k=1):
+        """Return all K-hop neighbor nodes of vetex V."""
+        if k <= 1:
+            in_vertices = set(self.predecessors(v, ignore=True))
+            out_vertices = set(self.successors(v, ignore=True))
+            return in_vertices.union(out_vertices)
+        else:
+            vertices = set(self.neighbors(v))
+            for u in self.neighbors(v):
+                found = self.neighbors(u, k - 1)
+                vertices.union(found)
+            return vertices
 
     def set_vertex_attribute(self, v, attr, val):
         """Define the vertex attribute of vetex V named ATTR as value VAL."""
@@ -895,7 +899,7 @@ class Graph:
             term4 = beta1 * u[b - 1] * v[a - 1]
             denom = numpy.dot(v.transpose(), u)
             delta = (-lmbda * term1 + term2 + term3 + term4) / (denom - term1)
-            return delta
+            return float(delta)
 
         # FIXME: Support directed graphs.
         self.expect_undirected()
@@ -912,8 +916,40 @@ class Graph:
         v = self.negate_if_negative(v)
         scores = [(d_lambda(lmbda, u, v, a, b), a, b) for a, b in self.edges()]
         scores = sorted(scores, key=lambda x: abs(x[0]))
+        for s, u, v in scores:
+            warn(f'coarsenet: score={s:6.3f} edge=({u}, {v})')
+
         while self.nvertices() > n * alpha:
             _, u, v = scores.pop(0)
+            self.merge_vertices(u, v)
+
+    def MGC_coarsening(self, alpha=.5):
+        def find_distances():
+            adj = self.adjacency_matrix()
+            dist = []
+            for v in self.vertices():
+                # Collect all 2-hop neighbors from vertex V.
+                neighbors = self.neighbors(v, 2)
+                dv = self.degree(v)
+                iv = self.vertex_index(v)
+                lv = adj[iv]
+                for u in neighbors:
+                    du = self.degree(u)
+                    iu = self.vertex_index(u)
+                    lu = adj[iu]
+                    d = numpy.linalg.norm(lv / dv - lu / du, ord=1)
+                    print(v, u, lv/dv, lu/du, lv/dv-lu/du,d)
+                    dist.append((d, v, u))
+            return dist
+
+        # FIXME: Support directed graphs.
+        self.expect_undirected()
+        nvertices = self.nvertices()
+        while self.nvertices() > nvertices * alpha:
+            dist = find_distances()
+            dist = sorted(dist, key=lambda x: x[0])
+            d, u, v = dist[0]
+            warn(f'MGC: d={d} edge=({u}, {v})')
             self.merge_vertices(u, v)
 
     # util ----------------------------------------------------------------
