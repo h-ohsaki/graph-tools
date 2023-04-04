@@ -66,7 +66,7 @@ eq(astr, """graph export_dot {
   node [color=gray90,style=filled];
   "1";
   "2";
-  "1" -- "2" [weight="123"];
+  "1" -- "2" [weight=123];
 }
 """)
 

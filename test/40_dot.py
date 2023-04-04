@@ -4,7 +4,7 @@ import re
 from test_more import ok, eq
 from graph_tools import Graph
 
-g = Graph(directed=True, multiedged=True)
+g = Graph(directed=True)
 buf = """digraph sample {
   1;
   2;
@@ -17,7 +17,7 @@ eq(g.nedges(), 1)
 ok(g.is_directed())
 ok(g.has_edge(1, 2))
 
-g = Graph(directed=True, multiedged=True)
+g = Graph(directed=True)
 buf = """// comment here
 digraph sample {
   1;

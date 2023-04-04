@@ -5,5 +5,4 @@ from graph_tools import Graph
 
 g = Graph(directed=False)
 g.create_li_maini_graph()
-
-# FIX: write test cases
+ok(g.is_connected())
