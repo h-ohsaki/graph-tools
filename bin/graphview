@@ -1,0 +1,8 @@
+#!/bin/sh
+# 
+# Visualize graph in DOT format with cellx.
+# Copyright (c) 2023, Hiroyuki Ohsaki.
+# All rights reserved.
+# 
+
+graphfilt -o cell $* | cellx
