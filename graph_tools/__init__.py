@@ -799,8 +799,8 @@ class Graph:
 
     def weight_matrix(self):
         """Return the weight matrix of the graph."""
-        nedges = self.nedges()
-        m = numpy.zeros((nedges, nedges), int)
+        nvertices = self.nvertices()
+        m = numpy.zeros((nvertices, nvertices), int)
         for u, v in self.edges():
             w = self.get_edge_weight(u, v) or 1
             ui = self.vertex_index(u)
@@ -902,7 +902,7 @@ class Graph:
         self.delete_edge(u, v)
         self.delete_vertex(v)
 
-    def random_matching_coarsening(self, alpha=.5):
+    def RM_coarsening(self, alpha=.5):
         # FIXME: Support directed graphs.
         self.expect_undirected()
         n = self.nvertices()
@@ -910,7 +910,7 @@ class Graph:
             u, v = self.random_edge()
             self.merge_vertices(u, v)
 
-    def coarsenet_coarsening(self, alpha=.5):
+    def COARSENET_coarsening(self, alpha=.5):
         def d_lambda(lmbda, u, v, a, b):
             # Weight of edges (a, b) and (b, a), respectively.
             # FIXME: This code assumes vertex IDs are 1...N.
@@ -985,45 +985,35 @@ class Graph:
             self.add_edge(u, v)
             self.set_edge_weight(u, v, w)
 
-    def local_variation_coarsening(self, alpha=.5, method='neighbor'):
+    def local_variation_coarsening(self, alpha=.5, method='variation_neighborhoods'):
         import pygsp
         import graph_coarsening
         # Create a sparse graph from the weight matrix.
         g = pygsp.graphs.Graph(self.weight_matrix())
         r = 1 - alpha  # r=0 means no reduction.
-        if method == 'neighbor':
-            m = 'variation_neighborhood'
-        elif method == 'edge':
-            m = 'variation_edges'
-        else:
-            die(f"local_variation_coarsening: Invalid contract method `{method}'."
-                )
         # C: coarsening matrix
         # Gc: coarsed graph
         # Call: coarsening matrix at all levels
         # Gall: coarsed graph at all levels
-        C, Gc, Call, Gall = graph_coarsening.coarsen(g, r=r, method=m)
+        C, Gc, Call, Gall = graph_coarsening.coarsen(g, r=r, method=method)
         # Rewrite all edges according to Gc.
         self.delete_vertices(list(self.vertices()))
         self.add_edges_from_sparse_graph(Gc)
 
-    def local_variation_neighbor_coarsening(self, alpha=.5):
-        self.local_variation_coarsening(self, alpha=alpha, method='neighbor')
+    def LVN_coarsening(self, alpha=.5):
+        self.local_variation_coarsening(alpha=alpha, method='variation_neighborhood')
 
-    def local_variation_edge_coarsening(self, alpha=.5):
-        self.local_variation_coarsening(self, alpha=alpha, method='edge')
+    def LVE_coarsening(self, alpha=.5):
+        self.local_variation_coarsening(alpha=alpha, method='variation_edges')
 
     def kron_coarsening(self, alpha=.5):
-        import pygsp
-        import graph_coarsening
-        import graph_coarsening.coarsening_utils
-        # Create a sparse graph from the weight matrix.
-        g = pygsp.graphs.Graph(self.weight_matrix())
-        r = 1 - alpha  # r=0 means no reduction.
-        Gc, Gs0 = graph_coarsening.coarsening_utils.kron_coarsening(g, r=r)
-        # Rewire all edges according to Gc
-        self.delete_vertices(list(self.vertices()))
-        self.add_edges_from_sparse_graph(Gc)
+        self.local_variation_coarsening(alpha=alpha, method='kron')
+
+    def HEM_coarsening(self, alpha=.5):
+        self.local_variation_coarsening(alpha=alpha, method='heavy_edge')
+
+    def affinity_coarsening(self, alpha=.5):
+        self.local_variation_coarsening(alpha=alpha, method='affinity_JC')
 
     # util ----------------------------------------------------------------
     def header_string(self, comment='# '):
@@ -1732,10 +1722,13 @@ class Graph:
             l = '->' if self.is_directed() else '--'
             for i in self.get_multiedge_ids(u, v):
                 astr += f'  "{u}" {l} "{v}"'
+                # Dump edge attributes.
                 attrs = self.get_edge_attributes_by_id(u, v, i)
                 if attrs:
                     alist = []
                     for key, val in attrs.items():
+                        if val is None:
+                            continue
                         if type(val) == str:
                             alist.append(f'{key}="{val}"')
                         else:
