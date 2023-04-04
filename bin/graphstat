@@ -34,23 +34,31 @@ def usage():
     import_fmts = '/'.join(graph_tools.IMPORT_FORMATS)
     types = '/'.join(STAT_TBL.keys())
     die(f"""\
-usage: {prog} [-vqdu] [-t type[,type]] [-i format] [file...]
+usage: {prog} [-vqdua] [-i format] [-t type[,type]] [file...]
   -v              verbose mode (default)
   -q              quiet mode
   -d              directed graph
   -u              undirected graph (default)
-  -t type[,type]  specify statistic to display ({types})
+  -a              display all vertex/edge measures
   -i format       input graph format ({import_fmts})
+  -t type[,type]  specify statistic to display ({types})
 """)
 
 def degree_centrality(g):
-    return [(v, g.degree_centrality(v)) for v in g.vertices()]
+    vals = [(v, g.degree_centrality(v)) for v in g.vertices()]
+    return sorted(vals, key=lambda x: -x[1])
 
 def closeness_centrality(g):
-    return [(v, g.closeness_centrality(v)) for v in g.vertices()]
+    vals = [(v, g.closeness_centrality(v)) for v in g.vertices()]
+    return sorted(vals, key=lambda x: -x[1])
 
 def eigenvector_centrality(g):
-    return [(v, g.eigenvector_centrality(v)) for v in g.vertices()]
+    vals = [(v, g.eigenvector_centrality(v)) for v in g.vertices()]
+    return sorted(vals, key=lambda x: -x[1])
+
+def betweenness_cent(g):
+    vals = [(v, g.betweenness_cent(v)) for v in g.vertices()]
+    return sorted(vals, key=lambda x: -x[1])
 
 STAT_TBL = {
     'nodes': lambda g: g.nvertices(),
@@ -74,9 +82,10 @@ STAT_TBL = {
     'algebric_connectivity': lambda g: g.algebraic_connectivity(),
     'effective_resistance': lambda g: g.effective_resistance(),
     'spanning_tree_count': lambda g: g.spanning_tree_count(),
-    # 'degree_cent': degree_centrality,
-    # 'closeness_cent': closeness_centrality,
-    # 'eigenvector_cent': eigenvector_centrality,
+    'degree_cent': degree_centrality,
+    'closeness_cent': closeness_centrality,
+    'eigenvector_cent': eigenvector_centrality,
+    'betweenness_cent': eigenvector_centrality,
 }
 
 def format_number(x):
@@ -90,19 +99,15 @@ def print_number(x, label=None, verbose=False):
     print(format_number(x))
 
 def main():
-    opt = getopts('vqduat:i:') or usage()
+    opt = getopts('vqduai:t:') or usage()
     verbose = False if opt.q else True
     directed = False
     if opt.d:
         directed = True
-    if opt.a:
-        stat_types = sorted(STAT_TBL.keys())
-
+    import_fmt = opt.i if opt.i else 'dot'
     stat_types = STAT_TBL.keys()
     if opt.t:
         stat_types = opt.t.split(',')
-
-    import_fmt = opt.i if opt.i else 'dot'
 
     # Load graph.
     g = graph_tools.Graph(directed=directed)
