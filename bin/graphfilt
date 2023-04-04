@@ -18,8 +18,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-# This program is contributed by Hal.
-
 import fileinput
 import os
 import random
@@ -69,9 +67,19 @@ def main():
         if f == 'none':
             pass
         if f == 'rm':
-            g.random_matching_coarsening()
+            g.RM_coarsening()
         if f == 'coarsenet':
-            g.coarsenet_coarsening()
+            g.COARSENET_coarsening()
+        if f == 'mgc':
+            g.MGC_coarsening()
+        if f == 'lvn':
+            g.LVN_coarsening()
+        if f == 'lve':
+            g.LVE_coarsening()
+        if f == 'kron':
+            g.kron_coarsening()
+        if f == 'hem':
+            g.HEM_coarsening()
 
     print(g.export_graph(out_fmt), end='')
 
