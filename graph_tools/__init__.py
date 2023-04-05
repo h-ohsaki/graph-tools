@@ -88,10 +88,8 @@ class Graph:
         self.V = {}  # Vertices.
         self.EI = {}  # Incoming edges.
         self.EO = {}  # Outgoing edges.
-        self.T = {}  # Shortest path cache (total distances from vertex).
-        self.P = {}  # Shortest path cache (preceeding vertices list).
-        self.Cb = {}  # Betweenness centrality cache (per vertex).
         self._directed = directed
+        self.invalidate_cache()
 
     def __repr__(self):
         return self.export_dot()
@@ -287,6 +285,7 @@ class Graph:
             del self.EI[v]
         except KeyError:
             pass
+        self.invalidate_cache()
 
     def delete_vertices(self, alist):
         """Delete all vertices ALST."""
@@ -369,6 +368,7 @@ class Graph:
         self.EI[v][u][count] = {}  # default edge attributes
         if weight:
             self.set_edge_weight_by_id(u, v, count, weight)
+        self.invalidate_cache()
         return count
 
     def delete_edge(self, u, v):
@@ -385,6 +385,7 @@ class Graph:
         if count == 0:
             del self.EO[u][v]
             del self.EI[v][u]
+        self.invalidate_cache()
         return count
 
     def edges_from(self, u, ignore=False):
@@ -496,17 +497,22 @@ class Graph:
     def set_edge_weight(self, u, v, w):
         """Set the weight of the first edge between vertices U and V to weight
         W."""
-        return self.set_edge_attribute_by_id(u, v, 0, 'weight', w)
+        return self.set_edge_weight_by_id(u, v, 0, w)
 
     def get_edge_weight(self, u, v):
         """Return the weight of the first edge between vertices U and V to
         weight
         W."""
-        return self.get_edge_attribute_by_id(u, v, 0, 'weight')
+        return self.get_edge_weight_by_id(u, v, 0)
 
     # algorithm ----------------------------------------------------------------
+    def invalidate_cache(self):
+        self.T = {}  # Shortest path cache (total distances from vertex).
+        self.P = {}  # Shortest path cache (preceeding vertices list).
+        self.cache = { 'between': {}, 'close':{}, 'eigen':{}, 'eccent':{}}
+
     # https://stackoverflow.com/questions/22897209/dijkstras-algorithm-in-python
-    def dijkstra(self, s):
+    def _dijkstra(self, s):
         """Compute all shortest paths from source vertex S using Dijkstra's
         algorithm.  Return two dictionaries: DIST and PREV.  Dictionary DIST
         records the distance to every vertex in the graph, and dictionary PREV
@@ -545,6 +551,12 @@ class Graph:
         self.P[s] = prev
         return dist, prev
 
+    def dijkstra(self, s):
+        if s in self.T and s in self.P:
+            return self.T[s], self.P[s]
+        else:
+            return self._dijkstra(s)
+
     def shortest_paths(self, s, t):
         """Return the all shortest-paths from vertex S to vertex T.  Note that
         the shortest path tree from source vertex S is cached for efficiency.
@@ -561,14 +573,14 @@ class Graph:
                     for path in find_path(s, prev):
                         yield path + [t]
 
-        # self.expect_directed()
         # Build shortest-path tree if not cached yet.
-        if not s in self.P:
+        if not s in self.T:
             self.dijkstra(s)
         return find_path(s, t)
 
     def shortest_path_length(self, s, t):
-        if s not in self.T or t not in self.T[s]:
+        # Build shortest-path tree if not cached yet.
+        if s not in self.T:
             self.dijkstra(s)
         if t in self.T[s]:
             return self.T[s][t]
@@ -606,9 +618,7 @@ class Graph:
 
     def is_reachable(self, u, v):
         """Check if any path exists from vertex U to vertex V."""
-        if u not in self.T:
-            self.dijkstra(u)
-        return v in self.T[u]
+        return self.shortest_path_length(u, v) < math.inf
 
     def explore(self, s):
         """Return the list of all vertices reachable from vertex S."""
@@ -653,78 +663,84 @@ class Graph:
     def degree_centrality(self, v):
         return self.degree(v) / (self.nvertices() - 1)
 
-    def betweenness_centrality(self, v, normalize=True):
+    def betweenness_centralities(self):
         """Return the betweenness centrality for vertex v.  This program
         implements Algorithm 1 (betweenness centrality in unweighted graphs)
         in U. Brandes, `A Fast Algorithm for Betweeness Centrality,' Journal
         of Mathematical Sociology, 2001."""
-        def _update_betweenness():
-            self.expect_undirected()
-            # Check if the graph is unweighted.
-            for _ in range(10):  # test 10 sample edges
-                u, v = self.random_edge()
-                w = self.get_edge_weight(u, v)
-                if w is not None and w != 1:
-                    die('only supports unweighted graphs.')
+        self.expect_undirected()
+        # Check if the graph is unweighted.
+        for _ in range(10):  # test 10 sample edges
+            u, v = self.random_edge()
+            w = self.get_edge_weight(u, v)
+            if w is not None and w != 1:
+                die('only supports unweighted graphs.')
 
-            # Betweenness centrality for vertices.
-            self.Cb = {v: 0 for v in self.vertices()}
+        # Betweenness centrality for vertices.
+        betweenness = {v: 0 for v in self.vertices()}
 
-            for s in self.vertices():
-                S = []  # Empty stack.
-                P = {w: [] for w in self.vertices()}
-                sigma = {t: 0 for t in self.vertices()}
-                sigma[s] = 1
-                d = {t: -1 for t in self.vertices()}
-                d[s] = 1
-                Q = deque()  # Empty queue.
-                Q.append(s)
+        for s in self.vertices():
+            S = []  # Empty stack.
+            P = {w: [] for w in self.vertices()}
+            sigma = {t: 0 for t in self.vertices()}
+            sigma[s] = 1
+            d = {t: -1 for t in self.vertices()}
+            d[s] = 1
+            Q = deque()  # Empty queue.
+            Q.append(s)
 
-                while Q:
-                    v = Q.popleft()
-                    S.append(v)
-                    for w in self.neighbors(v):
-                        # Found for the first time?
-                        if d[w] < 0:
-                            Q.append(w)
-                            d[w] = d[v] + 1
-                        # Shortest path to w via v?
-                        if d[w] == d[v] + 1:
-                            sigma[w] += sigma[v]
-                            P[w].append(v)
+            while Q:
+                v = Q.popleft()
+                S.append(v)
+                for w in self.neighbors(v):
+                    # Found for the first time?
+                    if d[w] < 0:
+                        Q.append(w)
+                        d[w] = d[v] + 1
+                    # Shortest path to w via v?
+                    if d[w] == d[v] + 1:
+                        sigma[w] += sigma[v]
+                        P[w].append(v)
 
-                delta = {v: 0 for v in self.vertices()}
-                # S returns vertices in order of non-increasing distance from s.
-                while S:
-                    w = S.pop()
-                    for v in P[w]:
-                        delta[v] += sigma[v] / sigma[w] * (1 + delta[w])
-                    if w != s:
-                        self.Cb[w] += delta[w]
+            delta = {v: 0 for v in self.vertices()}
+            # S returns vertices in order of non-increasing distance from s.
+            while S:
+                w = S.pop()
+                for v in P[w]:
+                    delta[v] += sigma[v] / sigma[w] * (1 + delta[w])
+                if w != s:
+                    betweenness[w] += delta[w]
+        return betweenness
 
-        if not v in self.Cb:
-            _update_betweenness()
+    def betweenness_centrality(self, v, normalize=True):
+        if not v in self.cache['between']:
+            self.cache['between'] = self.betweenness_centralities()
         if normalize:
             n = self.nvertices()
-            return self.Cb[v] / ((n - 1) * (n - 2))
+            return self.cache['between'][v] / ((n - 1) * (n - 2))
         else:
-            return self.Cb[v]
+            return self.cache['between'][v]
 
     def closeness_centrality(self, v):
-        d = sum([self.shortest_path_length(v, u) for u in self.vertices()])
-        n = self.nvertices()
-        return n / d
+        if not v in self.cache['close']:
+            d = sum([self.shortest_path_length(v, u) for u in self.vertices()])
+            self.cache['close'][v] = self.nvertices() / d
+        return self.cache['close'][v]
 
     def eigenvector_centrality(self, v):
-        adj = self.adjacency_matrix()
-        eigvec = self.maximum_eigvec(adj)
-        eigvec = self.negate_if_negative(eigvec)
-        vi = self.vertex_index(v)
-        return eigvec[vi]
+        if not v in self.cache['eigen']:
+            adj = self.adjacency_matrix()
+            eigvec = self.maximum_eigvec(adj)
+            eigvec = self.negate_if_negative(eigvec)
+            vi = self.vertex_index(v)
+            self.cache['eigen'][v] = eigvec[vi]
+        return self.cache['eigen'][v]
 
     def eccentricity(self, v):
-        lengths = [self.shortest_path_length(v, u) for u in self.vertices()]
-        return max(lengths)
+        if not v in self.cache['eccent']:
+            lengths = [self.shortest_path_length(v, u) for u in self.vertices()]
+            self.cache['eccent'][v] = max(lengths)
+        return self.cache['eccent'][v]
 
     def eccentricities(self):
         for v in self.vertices():
@@ -1030,11 +1046,11 @@ class Graph:
         if not name:
             warn(f"create_graph: no graph creation support for type '{atype}'")
             return None
-        method = getattr(self, name, None)
-        if not method:
+        func = getattr(self, name, None)
+        if not func:
             warn(f"create_graph: graph creation method '{name}' not found")
             return None
-        return method(*args, **kwargs)
+        return func(*args, **kwargs)
 
     def create_random_graph(self, N=10, E=20, multiedged=False):
         """Create an instance of *connected* random graphs with N vertices and
@@ -1172,7 +1188,7 @@ class Graph:
             self.add_edge(u, v)
         return self
 
-    def create_tree_graph(self, N=10):
+    def create_tree_graph(self, N=10, *kargs, **kwargs):
         """Create a random tree graph with N vertices."""
         self.add_vertex(1)
         # Add (N - 1) edges for _ in making tree topology.
@@ -1580,10 +1596,10 @@ class Graph:
     # import ----------------------------------------------------------------
     def import_graph(self, fmt, *args):
         name = IMPORT_SUBP.get(fmt, None)
-        method = getattr(self, name, None)
-        if not name or not method:
+        func = getattr(self, name, None)
+        if not name or not func:
             die(f"import_graph: no import support for graph format '{fmt}'")
-        return method(*args)
+        return func (*args)
 
     def import_dot(self, lines):
         buf = ''
@@ -1695,11 +1711,10 @@ class Graph:
     # ----------------------------------------------------------------
     def export_graph(self, fmt, *args):
         name = EXPORT_SUBP.get(fmt, None)
-        try:
-            method = getattr(self, name, None)
-        except TypeError:
+        func = getattr(self, name, None)
+        if not name or not func:
             die(f"export_graph: no export support for graph format '{fmt}'")
-        return method(*args)
+        return func(*args)
 
     def export_dot(self, *args):
         astr = self.header_string('// ')
