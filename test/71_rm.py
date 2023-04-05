@@ -13,6 +13,6 @@ g.add_edge(5, 6)
 g.add_edge(6, 4)
 
 n = g.nvertices()
-g.random_matching_coarsening(alpha=.5)
+g.RM_coarsening(alpha=.5)
 ok(int(n / 2) == g.nvertices())
 print(g)
