@@ -13,5 +13,5 @@ g.add_edge(5, 6)
 g.add_edge(6, 4)
 
 n = g.nvertices()
-g.coarsenet_coarsening(alpha=.5)
+g.COARSENET_coarsening(alpha=.5)
 ok(int(n / 2) == g.nvertices())
