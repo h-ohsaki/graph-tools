@@ -82,10 +82,10 @@ STAT_TBL = {
     'algebric_connectivity': lambda g: g.algebraic_connectivity(),
     'effective_resistance': lambda g: g.effective_resistance(),
     'spanning_tree_count': lambda g: g.spanning_tree_count(),
-    'degree_cent': degree_centrality,
-    'closeness_cent': closeness_centrality,
-    'eigenvector_cent': eigenvector_centrality,
-    'betweenness_cent': eigenvector_centrality,
+    # 'degree_cent': degree_centrality,
+    # 'closeness_cent': closeness_centrality,
+    # 'eigenvector_cent': eigenvector_centrality,
+    # 'betweenness_cent': eigenvector_centrality,
 }
 
 def format_number(x):
