@@ -36,7 +36,7 @@ from perlcompat import warn, die
 import numpy
 import tbdump
 
-VERSION = 1.8
+VERSION = 1.10
 
 CREATE_SUBP = {
     'random': 'create_random_graph',
@@ -137,18 +137,26 @@ class Graph:
         else:
             return 0
 
+    def ntriads(self, v):
+        degree = self.degree(v)
+        if degree <= 1:
+            return 0
+        # Count the number of triads among neighbors.
+        ntriads = 0
+        for u, w in itertools.combinations(self.neighbors(v), 2):
+            if self.has_edge(u, w) or self.has_edge(w, u):
+                ntriads += 1
+        return ntriads
+
     def clustering_coefficient(self):
         ratios = []
         for v in self.vertices():
             degree = self.degree(v)
-            if degree < 2:
-                continue
-            # Count number of opposite edges.
-            m = 0
-            for u, w in itertools.combinations(self.neighbors(v), 2):
-                if self.has_edge(u, w) or self.has_edge(w, u):
-                    m += 1
-            ratios.append(m / ((degree * (degree - 1)) / 2))
+            if degree <= 1:
+                ratio = 0
+            else:
+                ratio = self.ntriads(v) / ((degree * (degree - 1)) / 2)
+            ratios.append(ratio)
         return statistics.mean(ratios)
 
     def average_path_length(self):
@@ -173,7 +181,7 @@ class Graph:
 
     # vertex ----------------------------------------------------------------
     def vertices(self):
-        """Return all vertices in the graph as a list."""
+        """Return all vertices in the graph as a dictionary view object."""
         return self.V.keys()
 
     def vertex_index(self, v):
@@ -509,7 +517,7 @@ class Graph:
     def invalidate_cache(self):
         self.T = {}  # Shortest path cache (total distances from vertex).
         self.P = {}  # Shortest path cache (preceeding vertices list).
-        self.cache = { 'between': {}, 'close':{}, 'eigen':{}, 'eccent':{}}
+        self.cache = {'between': {}, 'close': {}, 'eigen': {}, 'eccent': {}}
 
     # https://stackoverflow.com/questions/22897209/dijkstras-algorithm-in-python
     def _dijkstra(self, s):
@@ -733,12 +741,14 @@ class Graph:
             eigvec = self.maximum_eigvec(adj)
             eigvec = self.negate_if_negative(eigvec)
             vi = self.vertex_index(v)
-            self.cache['eigen'][v] = eigvec[vi]
+            self.cache['eigen'][v] = float(eigvec[vi])
         return self.cache['eigen'][v]
 
     def eccentricity(self, v):
         if not v in self.cache['eccent']:
-            lengths = [self.shortest_path_length(v, u) for u in self.vertices()]
+            lengths = [
+                self.shortest_path_length(v, u) for u in self.vertices()
+            ]
             self.cache['eccent'][v] = max(lengths)
         return self.cache['eccent'][v]
 
@@ -898,7 +908,7 @@ class Graph:
 
     # coarsening ----------------------------------------------------------------
     def merge_vertices(self, u, v):
-        """Delete vertex U after connecting all neighbors (except vertex U) of
+        """Delete vertex V after connecting all neighbors (except vertex U) of
         vertex V to vertex U."""
         if u == v:
             return
@@ -917,28 +927,39 @@ class Graph:
             self.delete_edge(v, t)
         self.delete_edge(u, v)
         self.delete_vertex(v)
+        super_ = self.get_vertex_attribute(u, 'super') or ''
+        super_ += f'+{v}'
+        self.set_vertex_attribute(u, 'super', super_)
 
     def RM_coarsening(self, alpha=.5):
         # FIXME: Support directed graphs.
         self.expect_undirected()
         n = self.nvertices()
-        while self.nvertices() > n * alpha:
+        nretries = 0
+        while self.nvertices() > n * alpha and nretries < 100:
             u, v = self.random_edge()
+            u_merged = self.get_vertex_attribute(u, 'super')
+            v_merged = self.get_vertex_attribute(v, 'super')
+            if u_merged or v_merged:
+                nretries += 1
+                continue
             self.merge_vertices(u, v)
 
     def COARSENET_coarsening(self, alpha=.5):
         def d_lambda(lmbda, u, v, a, b):
             # Weight of edges (a, b) and (b, a), respectively.
             # FIXME: This code assumes vertex IDs are 1...N.
-            beta1 = adj[a - 1][b - 1]
-            beta2 = adj[b - 1][a - 1]
+            ai = self.vertex_index(a)
+            bi = self.vertex_index(a)
+            beta1 = adj[ai][bi]
+            beta2 = adj[bi][ai]
             # Calcurate \Delta \lambda using Proposition 5.2.
-            term1 = (u[a - 1] * v[a - 1] + u[b - 1] * v[b - 1])
-            ut_co = (1 + beta2) / 2 * (lmbda * u[a - 1] - beta1 * u[b - 1])
-            ut_co += (1 + beta1) / 2 * (lmbda * u[b - 1] - beta2 * u[a - 1])
-            term2 = v[a - 1] * ut_co
-            term3 = beta2 * u[a - 1] * v[b - 1]
-            term4 = beta1 * u[b - 1] * v[a - 1]
+            term1 = (u[ai] * v[ai] + u[bi] * v[bi])
+            ut_co = (1 + beta2) / 2 * (lmbda * u[ai] - beta1 * u[bi])
+            ut_co += (1 + beta1) / 2 * (lmbda * u[bi] - beta2 * u[ai])
+            term2 = v[ai] * ut_co
+            term3 = beta2 * u[ai] * v[bi]
+            term4 = beta1 * u[bi] * v[ai]
             denom = numpy.dot(v.transpose(), u)
             delta = (-lmbda * term1 + term2 + term3 + term4) / (denom - term1)
             return float(delta)
@@ -958,11 +979,14 @@ class Graph:
         v = self.negate_if_negative(v)
         scores = [(d_lambda(lmbda, u, v, a, b), a, b) for a, b in self.edges()]
         scores = sorted(scores, key=lambda x: abs(x[0]))
-        for s, u, v in scores:
-            warn(f'coarsenet: score={s:6.3f} edge=({u}, {v})')
+        # for s, u, v in scores:
+        #     warn(f'coarsenet: score={s:6.3f} edge=({u}, {v})')
 
-        while self.nvertices() > n * alpha:
+        while self.nvertices() > n * alpha and len(scores) > 0:
             _, u, v = scores.pop(0)
+            # Vertex might have been merged with another vertex.
+            if not self.has_vertex(u) or not self.has_vertex(v):
+                continue
             self.merge_vertices(u, v)
 
     def MGC_coarsening(self, alpha=.5):
@@ -991,7 +1015,7 @@ class Graph:
         nvertices = self.nvertices()
         while self.nvertices() > nvertices * alpha:
             d, u, v = find_vertices_with_minimum_distance()
-            warn(f'MGC: d={d} edge=({u}, {v})')
+            # warn(f'MGC: d={d} edge=({u}, {v})')
             self.merge_vertices(u, v)
 
     def add_edges_from_sparse_graph(self, sg):
@@ -1001,7 +1025,9 @@ class Graph:
             self.add_edge(u, v)
             self.set_edge_weight(u, v, w)
 
-    def local_variation_coarsening(self, alpha=.5, method='variation_neighborhoods'):
+    def local_variation_coarsening(self,
+                                   alpha=.5,
+                                   method='variation_neighborhoods'):
         import pygsp
         import graph_coarsening
         # Create a sparse graph from the weight matrix.
@@ -1017,7 +1043,8 @@ class Graph:
         self.add_edges_from_sparse_graph(Gc)
 
     def LVN_coarsening(self, alpha=.5):
-        self.local_variation_coarsening(alpha=alpha, method='variation_neighborhood')
+        self.local_variation_coarsening(alpha=alpha,
+                                        method='variation_neighborhood')
 
     def LVE_coarsening(self, alpha=.5):
         self.local_variation_coarsening(alpha=alpha, method='variation_edges')
@@ -1030,6 +1057,20 @@ class Graph:
 
     def affinity_coarsening(self, alpha=.5):
         self.local_variation_coarsening(alpha=alpha, method='affinity_JC')
+
+    def minimum_degree_coarsening(self, degree=2):
+        to_delete = set()
+        for v in self.vertices():
+            if self.degree(v) <= degree:
+                # Mark neighbor vertices as supernode.
+                for u in self.neighbors(v):
+                    if u not in to_delete:
+                        super_ = self.get_vertex_attribute(u, 'super') or ''
+                        super_ += f'+{v}'
+                        self.set_vertex_attribute(u, 'super', super_)
+                to_delete.add(v)
+
+        self.delete_vertices(to_delete)
 
     # util ----------------------------------------------------------------
     def header_string(self, comment='# '):
@@ -1394,7 +1435,7 @@ class Graph:
                 # FIXME: Quick hack to pack within WIDTH x HEIGHT field.
                 x = max(min(x, width), 0)
                 y = max(min(y, height), 0)
-                self.set_vertex_attribute(vmap[pnt], 'pos', f"{x},{y}")
+                self.set_vertex_attribute(vmap[pnt], 'pos', f"+{x}+{y}")
                 if last_pnt:
                     self.add_edge(vmap[last_pnt], vmap[pnt])
                 last_pnt = pnt
@@ -1599,7 +1640,7 @@ class Graph:
         func = getattr(self, name, None)
         if not name or not func:
             die(f"import_graph: no import support for graph format '{fmt}'")
-        return func (*args)
+        return func(*args)
 
     def import_dot(self, lines):
         buf = ''
@@ -1619,45 +1660,20 @@ class Graph:
         return self._import_dot_body(body)
 
     def _import_dot_body(self, body_str):
-        def str2number(v):
-            # FIXME: Shoud not check type.
-            if type(v) != str:
-                return v
-            # Remove preceeding/trailing spaces.
-            v = v.strip()
-            if v.startswith('0x'):
-                return int(v, 16)
-            elif re.match(r'[\d+-]+$', v):
-                return int(v)
-            elif re.match(r'[\d.eE+-]+$', v):
-                return float(v)
-            else:
-                return v
-
         for line in body_str.split(';'):
             line = line.strip()
             if not line:
                 continue
             if 'graph' in line or 'node' in line or 'edge' in line:
                 continue
+
+            # Must be either of graph, node, or edge definition.
             m = re.match(r'([^\[]*)\s*(\[(.*)\])?', line)
             if not m:
                 continue
-
             val, opts = m.group(1), m.group(3) or ''
-            val = val.replace('\"', '')
-
             # Parse attributes [name1=val1,name2=val2...].
-            attrs = {}
-            for pair in opts.split(','):
-                if not pair:
-                    break
-                akey, aval = pair.split('=', 2)
-                if akey == 'weight':
-                    aval = float(aval)
-                else:
-                    aval = aval.replace('\"', '')
-                attrs[akey] = aval
+            attrs = self._decode_attributes(opts)
 
             # Parse vertex/edge definition.
             # FIXME: This might be problematic...
@@ -1665,12 +1681,12 @@ class Graph:
                 vertices = re.split(r'\s*-[->]\s*', val)
                 while len(vertices) >= 2:
                     u, v = vertices[0], vertices[1]
-                    u, v = str2number(u), str2number(v)
+                    u, v = self._destringfy(u), self._destringfy(v)
                     i = self.add_edge_get_id(u, v)
                     self.set_edge_attributes_by_id(u, v, i, attrs)
                     vertices.pop(0)
             else:  # vertex
-                v = str2number(val)
+                v = self._destringfy(val)
                 self.add_vertex(v)
                 self.set_vertex_attributes(v, attrs)
 
@@ -1716,17 +1732,61 @@ class Graph:
             die(f"export_graph: no export support for graph format '{fmt}'")
         return func(*args)
 
+    def _stringfy(self, obj):
+        if obj is None:
+            return ''
+        elif type(obj) == str:
+            return f'"{obj}"'
+        elif type(obj) == float:
+            return f'{obj:g}'
+        else:
+            return f'{obj}'
+
+    def _destringfy(self, s):
+        if not s:
+            return None
+        s = s.strip()
+        m = re.search(r'^"(.*)"$', s)
+        if m:
+            return m.group(1)
+        if s.startswith('0x'):
+            return int(s, 16)
+        if re.match(r'[\d+-]+$', s):
+            return int(s)
+        if re.match(r'[\d.eE+-]+$', s):
+            return float(s)
+        return s
+
+    def _encode_attributes(self, attrs):
+        alist = []
+        for key, val in attrs.items():
+            if val is None:
+                continue
+            astr = self._stringfy(val)
+            alist.append(f'{key}={astr}')
+        if not alist:
+            return ''
+        return ' [' + ','.join(alist) + ']'
+
+    def _decode_attributes(self, astr):
+        # Parse attributes [name1=val1,name2=val2...].
+        # Note: ASTR must not contain [ and ].
+        attrs = {}
+        for pair in astr.split(','):
+            if not pair:
+                continue
+            key, val = pair.split('=', 2)
+            attrs[key] = self._destringfy(val)
+        return attrs
+
     def export_dot(self, *args):
         astr = self.header_string('// ')
         head = 'digraph' if self.is_directed() else 'graph'
         astr += head + ' export_dot {\n  node [color=gray90,style=filled];\n'
         for v in sorted(self.vertices()):
-            astr += f'  "{v}"'
+            astr += '  ' + self._stringfy(v)
             attrs = self.get_vertex_attributes(v)
-            if attrs:
-                alist = []
-                for key, val in attrs.items():
-                    alist.append(f'{key}="{val}"')
+            astr += self._encode_attributes(attrs)
             astr += ';\n'
 
         for edge in sorted(self.unique_edges(), key=lambda e: e[0]):
@@ -1736,19 +1796,10 @@ class Graph:
                 u, v = v, u
             l = '->' if self.is_directed() else '--'
             for i in self.get_multiedge_ids(u, v):
-                astr += f'  "{u}" {l} "{v}"'
+                astr += '  ' + self._stringfy(u) + f' {l} ' + self._stringfy(v)
                 # Dump edge attributes.
                 attrs = self.get_edge_attributes_by_id(u, v, i)
-                if attrs:
-                    alist = []
-                    for key, val in attrs.items():
-                        if val is None:
-                            continue
-                        if type(val) == str:
-                            alist.append(f'{key}="{val}"')
-                        else:
-                            alist.append(f'{key}={val}')
-                    astr += ' [' + (', '.join(alist)) + ']'
+                astr += self._encode_attributes(attrs)
                 astr += ';\n'
         astr += '}\n'
         return astr
