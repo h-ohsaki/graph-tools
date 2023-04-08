@@ -80,6 +80,8 @@ def main():
             g.kron_coarsening()
         if f == 'hem':
             g.HEM_coarsening()
+        if f == 'min':
+            g.minimum_degree_coarsening()
 
     print(g.export_graph(out_fmt), end='')
 
