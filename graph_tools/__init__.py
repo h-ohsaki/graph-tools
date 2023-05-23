@@ -756,6 +756,67 @@ class Graph:
         for v in self.vertices():
             yield self.eccentricity(v)
 
+    # node2vec implemtation is mostly based on https://github.com/ricardoCyy/node2vec.git.
+    def _node2vec_compute_weights(self, p=1., q=1.):
+        # p: return paramter
+        # q: in-out parameter
+        weights = {}
+        for s in self.vertices():
+            weights[s] = {}
+            for v in self.neighbors(s):
+                weights[s][v] = {}
+                for t in self.neighbors(v):
+                    w = self.get_edge_weight(v, t) or 1
+                    if t == t:
+                        weights[s][v][t] = w / p
+                    elif t in self.neighbors(s):
+                        weights[s][v][t] = w
+                    else:
+                        weights[s][v][t] = w / q
+        return weights
+
+    def _node2vec_generate_random_walks(self, weights, n_walks=10, walk_len=80):
+        # n_walks: the number of walks per node
+        # walk_len: length of each walk
+        walks = list()
+        for s in self.vertices():
+            for i in range(n_walks):
+                walk = [s]
+                neighbors = list(self.neighbors(s))
+                if not neighbors:
+                    break
+                v = random.choice(neighbors)
+                walk.append(v)
+                
+                for k in range(walk_len - 2):
+                    neighbors = list(self.neighbors(v))
+                    if not neighbors:
+                        break
+                    weight_list = [weights[s][v][t] for t in neighbors]
+                    t = random.choices(neighbors, weights=weight_list, k=1)[0]
+                    walk.append(t)
+                    s = v
+                    v = t
+                walks.append(walk)
+        random.shuffle(walks)
+        walks = [list(map(str, walk)) for walk in walks]
+        return walks
+
+    def node2vecs(self, dimension=128, window=10):
+        # dim: dimension of output embeddings
+        # win: window size for word2vec
+        weights = self._node2vec_compute_weights()
+        walks = self._node2vec_generate_random_walks(weights)
+
+        import gensim.models.word2vec
+        model = gensim.models.Word2Vec(walks, vector_size=dimension, window=window)
+        return model.wv
+
+    def node2vec(self, v):
+        if not v in self.cache['node2vec']:
+            self.cache['node2vec'] = self.node2vecs()
+        return self.cache['node2vec'][v]
+            
     # graph ----------------------------------------------------------------
     def copy_graph(self, directed=None):
         """Return a copy of the graph."""
