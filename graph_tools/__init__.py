@@ -517,7 +517,7 @@ class Graph:
     def invalidate_cache(self):
         self.T = {}  # Shortest path cache (total distances from vertex).
         self.P = {}  # Shortest path cache (preceeding vertices list).
-        self.cache = {'between': {}, 'close': {}, 'eigen': {}, 'eccent': {}}
+        self.cache = {'between': {}, 'close': {}, 'eigen': {}, 'eccent': {}, 'node2vec': {}}
 
     # https://stackoverflow.com/questions/22897209/dijkstras-algorithm-in-python
     def _dijkstra(self, s):
@@ -805,12 +805,13 @@ class Graph:
     def node2vecs(self, dimension=128, window=10):
         # dim: dimension of output embeddings
         # win: window size for word2vec
+        # FIXME: This code assumes that vertex identifiers are consqutive?
         weights = self._node2vec_compute_weights()
         walks = self._node2vec_generate_random_walks(weights)
 
         import gensim.models.word2vec
         model = gensim.models.Word2Vec(walks, vector_size=dimension, window=window)
-        return model.wv
+        return {v: model.wv[self.vertex_index(v)] for v in self.vertices()}
 
     def node2vec(self, v):
         if not v in self.cache['node2vec']:
