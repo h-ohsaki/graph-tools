@@ -11,11 +11,13 @@ g.add_edge(2, 3)
 g.add_edge(1, 3)
 g.add_edge(3, 4)
 
-vecs = g.node2vecs(dimension=5)
+for v in [1, 2, 3, 4]:
+    print(g.node2vec(v))
 
-for ui in range(4):
-    emb = vecs[ui]
-    print(f'embedding for node {ui+1}: e_{ui+1} = {emb}')
-    for vi in range(4):
-        norm = numpy.linalg.norm(vecs[ui] - vecs[vi], ord=1)
-        print(f'  |e_{ui+1} - e_{vi+1}|_1 = {norm:.2f}')
+for u in [1, 2, 3, 4]:
+    e_u = g.node2vec(u)
+    print(f'embedding for node {u}: e_{u} = {e_u}')
+    for v in [1, 2, 3, 4]:
+        e_v = g.node2vec(v)
+        norm = numpy.linalg.norm(e_u - e_v, ord=1)
+        print(f'  |e_{u} - e_{v}|_1 = {norm:.2f}')
