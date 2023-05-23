@@ -18,5 +18,4 @@ for ui in range(4):
     print(f'embedding for node {ui+1}: e_{ui+1} = {emb}')
     for vi in range(4):
         norm = numpy.linalg.norm(vecs[ui] - vecs[vi], ord=1)
-        print(f'u={ui+1}\tv={vi+1}\tnorm={norm}')
-        
+        print(f'  |e_{ui+1} - e_{vi+1}|_1 = {norm:.2f}')
