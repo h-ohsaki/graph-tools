@@ -1844,7 +1844,7 @@ class Graph:
     def export_dot(self, *args):
         astr = self.header_string('// ')
         head = 'digraph' if self.is_directed() else 'graph'
-        astr += head + ' export_dot {\n  node [color=gray90,style=filled];\n'
+        astr += head + ' export_dot {\ngraph [start="1"]\n  node [color=gray90,style=filled];\n'
         for v in sorted(self.vertices()):
             astr += '  ' + self._stringfy(v)
             attrs = self.get_vertex_attributes(v)
@@ -1878,14 +1878,14 @@ class Graph:
 
     def export_cell(self, *args):
         out = """\
-palette tcolor 1 1 1
-palette vcolor 1 .8 0 .3
-palette ecolor 0 .6 1 .5
+palette tcolor white
+palette vcolor heat15
+palette ecolor heat15 .8
 """
         max_degree = max([self.degree(v) for v in self.vertices()])
         for v in sorted(self.vertices()):
             # NOTE: Vertices with the maximum degree are drawn with 10% height/width.
-            r = .05 * self.degree(v) / max_degree
+            r = .005 + .010 / max_degree * (self.degree(v) - 1)
             out += f'define v{v} ellipse {r} {r} vcolor\n'
             out += f'define t{v} text {v} 12 tcolor\n'
             out += f'attach t{v} v{v}\n'
