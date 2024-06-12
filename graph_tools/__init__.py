@@ -517,7 +517,10 @@ class Graph:
     def invalidate_cache(self):
         self.T = {}  # Shortest path cache (total distances from vertex).
         self.P = {}  # Shortest path cache (preceeding vertices list).
-        self.cache = {'between': {}, 'close': {}, 'eigen': {}, 'eccent': {}, 'node2vec': {}}
+        self.cache = {
+            'between': {}, 'close': {}, 'eigen': {}, 'eccent': {}, 'node2vec':
+            {}
+        }
 
     # https://stackoverflow.com/questions/22897209/dijkstras-algorithm-in-python
     def _dijkstra(self, s):
@@ -775,7 +778,10 @@ class Graph:
                         weights[s][v][t] = w / q
         return weights
 
-    def _node2vec_generate_random_walks(self, weights, n_walks=10, walk_len=80):
+    def _node2vec_generate_random_walks(self,
+                                        weights,
+                                        n_walks=10,
+                                        walk_len=80):
         # n_walks: the number of walks per node
         # walk_len: length of each walk
         walks = list()
@@ -787,7 +793,7 @@ class Graph:
                     break
                 v = random.choice(neighbors)
                 walk.append(v)
-                
+
                 for k in range(walk_len - 2):
                     neighbors = list(self.neighbors(v))
                     if not neighbors:
@@ -810,14 +816,40 @@ class Graph:
         walks = self._node2vec_generate_random_walks(weights)
 
         import gensim.models.word2vec
-        model = gensim.models.Word2Vec(walks, vector_size=dimension, window=window)
+        model = gensim.models.Word2Vec(walks,
+                                       vector_size=dimension,
+                                       window=window)
         return {v: model.wv[self.vertex_index(v)] for v in self.vertices()}
 
     def node2vec(self, v):
         if not v in self.cache['node2vec']:
             self.cache['node2vec'] = self.node2vecs()
         return self.cache['node2vec'][v]
-            
+
+    def hitting_time(self, s, t):
+        # 3.1 Theorem (p. 13) in `Random walks on graphs: a survey'
+        adj = self.adjacency_matrix()
+        N = self.nvertices()
+        # Diagnoal matrix whose entries are the reciprocal of the vertex degree.
+        diag = numpy.zeros((N, N), float)
+        for v in self.vertices():
+            vi = self.vertex_index(v)
+            diag[vi, vi] = 1 / self.degree(v)
+        # Transition probability matrix.
+        trans = numpy.dot(diag, adj)
+        eigvals, eigvecs = self.eig(trans)
+        # Average hitting time from vertex s to vertex t.
+        ds = self.degree(s)
+        dt = self.degree(t)
+        si = self.vertex_index(s)
+        ti = self.vertex_index(t)
+        htime = 0
+        for k in range(0, N - 1):
+            lambda_k, vk = eigvals[k], eigvecs[k]
+            htime += (vk[ti]**2 / dt -
+                      vk[si] * vk[ti] / math.sqrt(ds * dt)) / (1 - lambda_k)
+        return htime * 2 * self.nedges()
+
     # graph ----------------------------------------------------------------
     def copy_graph(self, directed=None):
         """Return a copy of the graph."""
@@ -896,11 +928,22 @@ class Graph:
             m[ui][vi] = m[vi][ui] = w
         return m
 
+    def eig(self, m):
+        eigvals, eigvecs = numpy.linalg.eig(m)
+        # Sort in the ascending order of the eigenvalues.
+        sorted_indices = numpy.argsort(eigvals)
+        eigvals = eigvals[sorted_indices]
+        eigvecs = eigvecs[sorted_indices]
+        # Normalize the eigenvectors to a unit length.
+        norms = numpy.linalg.norm(eigvecs, axis=1, keepdims=True)
+        norms[norms == 0] = 1
+        eigvecs = eigvecs / norms
+        return eigvals, eigvecs
+
     def eigenvals(self, m):
         """Return the eigenvalues of matrix M.  Eigenvalues are sorted in the
         ascending order."""
-        eigvals, eigvecs = numpy.linalg.eig(m)
-        return sorted(eigvals)
+        return self.eig(m)[0]
 
     def maximum_eigenval(self, m):
         """Return the maximum eigenvalue of matrix M."""
@@ -909,12 +952,8 @@ class Graph:
     def maximum_eig(self, m):
         """Return the maximum eigenvalue and the corresponding eigenvector of
         matrix M."""
-        eigvals, eigvecs = numpy.linalg.eig(m)
-        # Find the index of the largest eigenvalue.
-        i = max(enumerate(eigvals), key=lambda x: x[1])[0]
-        eigval = eigvals[i]
-        eigvec = eigvecs[:, i]
-        return eigval, eigvec
+        eigvals, eigvecs = self.eig(m)
+        return eigvals[-1], eigvecs[-1]
 
     def maximum_eigvec(self, m):
         """Return the principal eigenvector of M corresponding the maximum
