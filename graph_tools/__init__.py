@@ -1051,7 +1051,7 @@ class Graph:
             # Weight of edges (a, b) and (b, a), respectively.
             # FIXME: This code assumes vertex IDs are 1...N.
             ai = self.vertex_index(a)
-            bi = self.vertex_index(a)
+            bi = self.vertex_index(b)
             beta1 = adj[ai][bi]
             beta2 = adj[bi][ai]
             # Calcurate \Delta \lambda using Proposition 5.2.
