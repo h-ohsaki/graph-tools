@@ -888,6 +888,33 @@ class Graph:
                     self.add_edge(u, v)
         return self
 
+    def anonymize_graph(self, directed=None):
+        if directed is None:
+            directed = self.directed()
+        T = Graph(directed)
+        # FIXME: Preserve graph attributes.
+        vertex_map = [_ + 1 for _ in range(self.nvertices())]
+        random.shuffle(vertex_map)
+
+        for v0 in self.vertices():
+            v = vertex_map[self.vertex_index(v0)]
+            T.add_vertex(v)
+            T.set_vertex_attributes(v, self.get_vertex_attributes(v0))
+        directed_from_undirected = directed and not self.directed()
+        for u0, v0 in self.edges():
+            u = vertex_map[self.vertex_index(u0)]
+            v = vertex_map[self.vertex_index(v0)]
+            T.add_edge(u, v)
+            if directed_from_undirected:
+                T.add_edge(v, u)
+            for n in self.get_multiedge_ids(u0, v0):
+                T.set_edge_attributes_by_id(
+                    u, v, n, self.get_edge_attributes_by_id(u0, v0, n))
+                if directed_from_undirected:
+                    T.set_edge_attributes_by_id(
+                        v, u, n, self.get_edge_attributes_by_id(u0, v0, n))
+        return T
+
     # spectral measures ----------------------------------------------------------------
     def adjacency_matrix(self):
         """Return the adjacency matrix of the graph as NumPy.ndarray
