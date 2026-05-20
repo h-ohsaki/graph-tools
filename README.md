@@ -92,4 +92,4 @@ graphviz - graph visualization software (https://graphviz.org/)
 
 # AUTHOR
 
-Hiroyuki Ohsaki <ohsaki[atmark]lsnl.jp>
+Hiroyuki Ohsaki <code[atmark]lsnl.jp>

@@ -7,9 +7,9 @@ with open('README.md', 'r') as fh:
 
 setuptools.setup(
     name="graph-tools",
-    version="1.14",
+    version="1.15",
     author="Hiroyuki Ohsaki",
-    author_email="ohsaki@lsnl.jp",
+    author_email="code@lsnl.jp",
     description=
     "tools for graph theory and network science with many generation models",
     long_description=long_description,

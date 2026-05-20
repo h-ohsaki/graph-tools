@@ -1040,6 +1040,7 @@ class Graph:
         vertex V to vertex U."""
         if u == v:
             return
+        # Rewire all edges connecting to vertex V to vertex U.
         for t in self.neighbors(v):
             if t == u:
                 continue
@@ -1053,11 +1054,13 @@ class Graph:
                 self.add_edge(u, t)
                 self.set_edge_weight(u, t, w)
             self.delete_edge(v, t)
+        # Record the information on merged vertices.
+        super_u = self.get_vertex_attribute(u, 'super') or ''
+        super_v = self.get_vertex_attribute(v, 'super') or ''
+        super_u += f'{super_v}+{v}'
+        self.set_vertex_attribute(u, 'super', super_u)
         self.delete_edge(u, v)
         self.delete_vertex(v)
-        super_ = self.get_vertex_attribute(u, 'super') or ''
-        super_ += f'+{v}'
-        self.set_vertex_attribute(u, 'super', super_)
 
     def RM_coarsening(self, alpha=.5):
         # FIXME: Support directed graphs.
